@@ -1,0 +1,86 @@
+{
+  "finder:correctness": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:contracts_tests": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:data_concurrency": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:rules_compliance": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "security": {
+    "findings": [
+      {
+        "file": "app/api.py",
+        "start_line": 6,
+        "end_line": 6,
+        "caused_by": null,
+        "lane": "inline",
+        "category": "security",
+        "severity": "critical",
+        "effort": "quick_win",
+        "title": "SQL injection via f-string query on customer lookup",
+        "claim": "The customer_id request parameter is interpolated into a SQL string with an f-string and executed.",
+        "failure_scenario": "",
+        "why_it_matters": "An attacker can read or modify any customer record.",
+        "suggested_fix": "Use a parameterised query: cur.execute('SELECT * FROM customers WHERE id = %s', (customer_id,)).",
+        "evidence": [
+          {
+            "file": "app/api.py",
+            "line": 6,
+            "quote": "    cur.execute(f\"SELECT * FROM customers WHERE id = {customer_id}\")"
+          }
+        ],
+        "bug_class_instances": [],
+        "rule_quote": null,
+        "trace": [
+          {
+            "file": "app/api.py",
+            "line": 4,
+            "note": "customer_id arrives from the request query string"
+          },
+          {
+            "file": "app/api.py",
+            "line": 6,
+            "note": "customer_id is interpolated into the SQL text and executed"
+          }
+        ],
+        "exploit_scenario": "GET /customer?id=1 OR 1=1 returns every customer row.",
+        "confidence": 0.92
+      }
+    ],
+    "files_read_outside_packet": []
+  },
+  "verifier:security": {
+    "verdict": "CONFIRMED",
+    "evidence": [
+      {
+        "file": "app/api.py",
+        "line": 6,
+        "quote": "    cur.execute(f\"SELECT * FROM customers WHERE id = {customer_id}\")"
+      }
+    ],
+    "reason": "The request parameter reaches cur.execute through an f-string with no parameter binding.",
+    "severity_adjusted": null,
+    "confidence": 5,
+    "checks_performed": [
+      "read app/api.py:1-10"
+    ],
+    "confidence_10": 9
+  },
+  "verifier": {
+    "verdict": "UNKNOWN",
+    "evidence": [],
+    "reason": "nothing to verify",
+    "severity_adjusted": null,
+    "confidence": 1,
+    "checks_performed": []
+  }
+}

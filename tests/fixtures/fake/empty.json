@@ -1,0 +1,30 @@
+{
+  "finder:correctness": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:contracts_tests": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:data_concurrency": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:rules_compliance": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "security": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "verifier": {
+    "verdict": "UNKNOWN",
+    "evidence": [],
+    "reason": "nothing to verify",
+    "severity_adjusted": null,
+    "confidence": 1,
+    "checks_performed": []
+  }
+}

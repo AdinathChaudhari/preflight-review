@@ -1,0 +1,3 @@
+[
+  {"line_start": 7, "line_end": 7, "category": "security", "severity": "critical", "description": "SQL injection: the user-supplied name is interpolated into the query with an f-string instead of a bound parameter."}
+]

@@ -1,0 +1,14 @@
+{
+  "name": "preflight-review",
+  "owner": {
+    "name": "AdinathChaudhari"
+  },
+  "plugins": [
+    {
+      "name": "preflight",
+      "source": "./",
+      "description": "Local pre-push AI code review that writes a report file for agents to act on",
+      "version": "1.0.2"
+    }
+  ]
+}

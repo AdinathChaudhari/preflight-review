@@ -1,0 +1,3 @@
+[
+  {"line_start": 6, "line_end": 14, "category": "concurrency", "severity": "major", "description": "Job claim is a SELECT followed by a separate UPDATE with no row lock or conditional update, so two workers can claim the same job."}
+]

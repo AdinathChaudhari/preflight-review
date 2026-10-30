@@ -1,0 +1,5 @@
+[
+  {"text": "def f(x=[]): pass", "range": {"byteOffset": {"start": 10, "end": 27}, "start": {"line": 2, "column": 0}, "end": {"line": 2, "column": 17}}, "file": "app/x.py", "lines": "def f(x=[]): pass", "language": "Python", "metaVariables": {}, "ruleId": "no-mutable-default", "severity": "error", "note": null, "message": "Mutable default argument", "labels": []},
+  {"text": "print(x)", "range": {"byteOffset": {"start": 40, "end": 48}, "start": {"line": 6, "column": 4}, "end": {"line": 7, "column": 1}}, "file": "app/x.py", "lines": "    print(x)", "language": "Python", "metaVariables": {}, "ruleId": "no-print", "severity": "warning", "note": null, "message": "Avoid print in library code", "labels": []},
+  {"text": "assert x", "range": {"byteOffset": {"start": 60, "end": 68}, "start": {"line": 9, "column": 0}, "end": {"line": 9, "column": 8}}, "file": "app/x.py", "lines": "assert x", "language": "Python", "metaVariables": {}, "ruleId": "hint-rule", "severity": "hint", "note": null, "message": "Hint only", "labels": []}
+]

@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "instructions": {"type": "string"},
+          "from_learnings": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["path", "instructions", "from_learnings"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["proposals"],
+  "additionalProperties": false
+}

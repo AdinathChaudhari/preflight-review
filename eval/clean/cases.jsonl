@@ -1,0 +1,2 @@
+# One JSON object per line; lines starting with '#' and blank lines are skipped.
+# {"repo_path": "/path/to/repo", "base_sha": "...", "head_sha": "...", "note": "merged PR #12"}

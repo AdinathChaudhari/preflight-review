@@ -1,0 +1,3 @@
+[
+  {"line_start": 10, "line_end": 11, "category": "error_handling", "severity": "major", "description": "A broad except Exception: pass swallows every sync failure, so sync_appointment reports success even when the push failed."}
+]

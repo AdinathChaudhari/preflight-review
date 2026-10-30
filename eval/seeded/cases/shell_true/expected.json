@@ -1,0 +1,3 @@
+[
+  {"line_start": 7, "line_end": 8, "category": "security", "severity": "critical", "description": "Command injection: subprocess.run with shell=True and an interpolated report_id / dest_dir string."}
+]

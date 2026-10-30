@@ -1,0 +1,11 @@
+id: no-yaml-unsafe-load
+language: python
+severity: error
+message: "yaml.load() without a safe Loader can execute arbitrary code; use yaml.safe_load() or pass Loader=yaml.SafeLoader."
+rule:
+  pattern: yaml.load($$$ARGS)
+  not:
+    has:
+      kind: keyword_argument
+      stopBy: end
+      regex: "^Loader\\s*=\\s*(yaml\\.)?(C?SafeLoader)$"

@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "changes_by_theme": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme",
+          "files",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "effort_1_to_5": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "merge_risk": {
+      "type": "string",
+      "enum": [
+        "Minimal",
+        "Low",
+        "Moderate",
+        "Major",
+        "Critical"
+      ]
+    },
+    "merge_risk_sentence": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary",
+    "changes_by_theme",
+    "effort_1_to_5",
+    "merge_risk",
+    "merge_risk_sentence"
+  ],
+  "additionalProperties": false
+}

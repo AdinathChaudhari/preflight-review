@@ -1,0 +1,8 @@
+id: no-shell-true
+valid:
+  - subprocess.run(["ls", "-l"])
+  - subprocess.run(cmd, check=True, shell=False)
+invalid:
+  - subprocess.run(cmd, shell=True)
+  - subprocess.Popen(cmd, stdout=PIPE, shell=True, cwd=d)
+  - subprocess.check_output(cmd, shell=True)

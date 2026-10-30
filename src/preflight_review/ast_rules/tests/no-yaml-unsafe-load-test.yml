@@ -1,0 +1,10 @@
+id: no-yaml-unsafe-load
+valid:
+  - yaml.safe_load(text)
+  - yaml.load(text, Loader=yaml.SafeLoader)
+  - yaml.load(text, Loader=SafeLoader)
+  - yaml.load(text, Loader=yaml.CSafeLoader)
+invalid:
+  - yaml.load(text)
+  - yaml.load(text, Loader=yaml.FullLoader)
+  - yaml.load(text, yaml.Loader)

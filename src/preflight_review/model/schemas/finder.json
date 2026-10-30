@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "start_line": {
+            "type": "integer"
+          },
+          "end_line": {
+            "type": "integer"
+          },
+          "caused_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lane": {
+            "type": "string",
+            "enum": [
+              "inline",
+              "outside_diff",
+              "pre_existing",
+              "nitpick"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "correctness",
+              "contracts",
+              "data_integrity",
+              "concurrency",
+              "error_handling",
+              "security",
+              "rules",
+              "domain",
+              "maintainability"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "major",
+              "minor",
+              "trivial"
+            ]
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "quick_win",
+              "heavy_lift",
+              "low_value"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "claim": {
+            "type": "string"
+          },
+          "failure_scenario": {
+            "type": "string"
+          },
+          "why_it_matters": {
+            "type": "string"
+          },
+          "suggested_fix": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "quote": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "quote"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "bug_class_instances": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "start_line": {
+                  "type": "integer"
+                },
+                "end_line": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "file",
+                "start_line",
+                "end_line"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "rule_quote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "file",
+          "start_line",
+          "end_line",
+          "lane",
+          "category",
+          "severity",
+          "effort",
+          "title",
+          "claim",
+          "failure_scenario",
+          "why_it_matters",
+          "suggested_fix",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "files_read_outside_packet": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "findings",
+    "files_read_outside_packet"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,3 @@
+[
+  {"line_start": 11, "line_end": 11, "category": "correctness", "severity": "major", "description": "send_email is an async function called without await, so the coroutine never runs and no email is sent while sent is still incremented."}
+]
