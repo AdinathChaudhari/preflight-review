@@ -1,0 +1,512 @@
+{
+  "__per_case__": {
+    "missing_auth": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/routes/orders.py",
+            "start_line": 13,
+            "end_line": 14,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "critical",
+            "effort": "quick_win",
+            "title": "delete_order has no authentication or role check",
+            "claim": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
+            "failure_scenario": "An unauthenticated request deletes any order row.",
+            "why_it_matters": "An unauthenticated request deletes any order row.",
+            "suggested_fix": "Restore @require_role('admin') and the current_user check.",
+            "evidence": [
+              {
+                "file": "app/routes/orders.py",
+                "line": 14,
+                "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/routes/orders.py",
+                "line": 13,
+                "note": "untrusted input reaches this line"
+              },
+              {
+                "file": "app/routes/orders.py",
+                "line": 14,
+                "note": "the unsafe operation happens here"
+              }
+            ],
+            "exploit_scenario": "An unauthenticated request deletes any order row.",
+            "confidence": 0.92
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/routes/orders.py",
+            "line": 14,
+            "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
+          }
+        ],
+        "reason": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/routes/orders.py:1-30"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/routes/orders.py",
+            "line": 14,
+            "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
+          }
+        ],
+        "reason": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/routes/orders.py:1-30"
+        ]
+      }
+    },
+    "fstring_sql": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/db/customers.py",
+            "start_line": 6,
+            "end_line": 7,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "critical",
+            "effort": "quick_win",
+            "title": "SQL injection via f-string query",
+            "claim": "The name parameter is interpolated into the SQL text with an f-string instead of a bound parameter.",
+            "failure_scenario": "name = \"' OR '1'='1\" returns every customer.",
+            "why_it_matters": "name = \"' OR '1'='1\" returns every customer.",
+            "suggested_fix": "Use a parameterised query with %s and a tuple.",
+            "evidence": [
+              {
+                "file": "app/db/customers.py",
+                "line": 7,
+                "quote": "        f\"SELECT id, name FROM customers WHERE name = '{name}'\""
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/db/customers.py",
+                "line": 6,
+                "note": "untrusted input reaches this line"
+              },
+              {
+                "file": "app/db/customers.py",
+                "line": 7,
+                "note": "the unsafe operation happens here"
+              }
+            ],
+            "exploit_scenario": "name = \"' OR '1'='1\" returns every customer.",
+            "confidence": 0.92
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/db/customers.py",
+            "line": 7,
+            "quote": "        f\"SELECT id, name FROM customers WHERE name = '{name}'\""
+          }
+        ],
+        "reason": "The name parameter is interpolated into the SQL text with an f-string instead of a bound parameter.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/db/customers.py:1-30"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/db/customers.py",
+            "line": 7,
+            "quote": "        f\"SELECT id, name FROM customers WHERE name = '{name}'\""
+          }
+        ],
+        "reason": "The name parameter is interpolated into the SQL text with an f-string instead of a bound parameter.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/db/customers.py:1-30"
+        ]
+      }
+    },
+    "shell_true": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/tools/export.py",
+            "start_line": 6,
+            "end_line": 9,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "critical",
+            "effort": "quick_win",
+            "title": "Command injection through shell=True with interpolated input",
+            "claim": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+            "failure_scenario": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "why_it_matters": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "suggested_fix": "Pass an argument list and drop shell=True.",
+            "evidence": [
+              {
+                "file": "app/tools/export.py",
+                "line": 8,
+                "quote": "        shell=True,"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/tools/export.py",
+                "line": 6,
+                "note": "untrusted input reaches this line"
+              },
+              {
+                "file": "app/tools/export.py",
+                "line": 8,
+                "note": "the unsafe operation happens here"
+              }
+            ],
+            "exploit_scenario": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "confidence": 0.92
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/tools/export.py",
+            "line": 8,
+            "quote": "        shell=True,"
+          }
+        ],
+        "reason": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/tools/export.py:1-30"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/tools/export.py",
+            "line": 8,
+            "quote": "        shell=True,"
+          }
+        ],
+        "reason": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/tools/export.py:1-30"
+        ]
+      }
+    },
+    "path_traversal": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/files/download.py",
+            "start_line": 8,
+            "end_line": 8,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "critical",
+            "effort": "quick_win",
+            "title": "Path traversal: user-supplied name joined to BASE_DIR without containment check",
+            "claim": "The user-supplied name is joined to BASE_DIR without a containment check, so ../../etc/passwd escapes the upload directory.",
+            "failure_scenario": "A name like ../../etc/passwd reads files outside BASE_DIR.",
+            "why_it_matters": "A name like ../../etc/passwd reads files outside BASE_DIR.",
+            "suggested_fix": "Restore the realpath + startswith(BASE_DIR + os.sep) check.",
+            "evidence": [
+              {
+                "file": "app/files/download.py",
+                "line": 8,
+                "quote": "    path = os.path.join(BASE_DIR, name)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/files/download.py",
+                "line": 8,
+                "note": "untrusted input reaches this line"
+              },
+              {
+                "file": "app/files/download.py",
+                "line": 8,
+                "note": "the unsafe operation happens here"
+              }
+            ],
+            "exploit_scenario": "A name like ../../etc/passwd reads files outside BASE_DIR.",
+            "confidence": 0.92
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/files/download.py",
+            "line": 8,
+            "quote": "    path = os.path.join(BASE_DIR, name)"
+          }
+        ],
+        "reason": "The user-supplied name is joined to BASE_DIR without a containment check, so ../../etc/passwd escapes the upload directory.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/files/download.py:1-30"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/files/download.py",
+            "line": 8,
+            "quote": "    path = os.path.join(BASE_DIR, name)"
+          }
+        ],
+        "reason": "The user-supplied name is joined to BASE_DIR without a containment check, so ../../etc/passwd escapes the upload directory.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/files/download.py:1-30"
+        ]
+      }
+    },
+    "dropped_await": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/services/notify.py",
+            "start_line": 11,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Async send_email is called without await",
+            "claim": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+            "failure_scenario": "No notification is delivered but notify_all reports success.",
+            "why_it_matters": "No notification is delivered but notify_all reports success.",
+            "suggested_fix": "await send_email(...).",
+            "evidence": [
+              {
+                "file": "app/services/notify.py",
+                "line": 11,
+                "quote": "        send_email(client, user[\"email\"], body)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/services/notify.py",
+            "line": 11,
+            "quote": "        send_email(client, user[\"email\"], body)"
+          }
+        ],
+        "reason": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/services/notify.py:1-30"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/services/notify.py",
+            "line": 11,
+            "quote": "        send_email(client, user[\"email\"], body)"
+          }
+        ],
+        "reason": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/services/notify.py:1-30"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "swallowed_exception": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "start_line": 10,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "error_handling",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Broad except swallows every sync failure",
+            "claim": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+            "failure_scenario": "An API outage silently drops appointments.",
+            "why_it_matters": "An API outage silently drops appointments.",
+            "suggested_fix": "Log and re-raise, or catch the specific error.",
+            "evidence": [
+              {
+                "file": "app/sync/calendar_sync.py",
+                "line": 10,
+                "quote": "    except Exception:"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "line": 10,
+            "quote": "    except Exception:"
+          }
+        ],
+        "reason": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/sync/calendar_sync.py:1-30"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "line": 10,
+            "quote": "    except Exception:"
+          }
+        ],
+        "reason": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/sync/calendar_sync.py:1-30"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "nonatomic_claim": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/queue/claims.py",
+            "line": 1,
+            "quote": "\"\"\"Job queue worker.\"\"\""
+          }
+        ],
+        "reason": "unused",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/queue/claims.py:1-30"
+        ]
+      }
+    },
+    "benign_refactor": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/utils/formatting.py",
+            "line": 1,
+            "quote": "\"\"\"Order totals.\"\"\""
+          }
+        ],
+        "reason": "unused",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/utils/formatting.py:1-30"
+        ]
+      }
+    }
+  }
+}

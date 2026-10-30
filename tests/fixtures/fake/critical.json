@@ -1,0 +1,67 @@
+{
+  "finder:correctness": {
+    "findings": [
+      {
+        "file": "app/service.py",
+        "start_line": 3,
+        "end_line": 4,
+        "caused_by": null,
+        "lane": "inline",
+        "category": "correctness",
+        "severity": "critical",
+        "effort": "quick_win",
+        "title": "Discount applied twice to the order total",
+        "claim": "apply_discount subtracts the discount from the subtotal and then multiplies by (1 - rate) again, so customers are discounted twice.",
+        "failure_scenario": "subtotal=100, rate=0.1 returns 81.0 instead of 90.0.",
+        "why_it_matters": "Customers are undercharged on every discounted order.",
+        "suggested_fix": "Apply the discount once: return subtotal * (1 - rate).",
+        "evidence": [
+          {
+            "file": "app/service.py",
+            "line": 3,
+            "quote": "    discounted = subtotal - subtotal * rate"
+          }
+        ],
+        "bug_class_instances": [],
+        "rule_quote": null
+      }
+    ],
+    "files_read_outside_packet": []
+  },
+  "finder:contracts_tests": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:data_concurrency": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "finder:rules_compliance": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "security": {
+    "findings": [],
+    "files_read_outside_packet": []
+  },
+  "verifier": {
+    "verdict": "CONFIRMED",
+    "evidence": [
+      {
+        "file": "app/service.py",
+        "line": 3,
+        "quote": "    discounted = subtotal - subtotal * rate"
+      }
+    ],
+    "reason": "Line 4 multiplies the already-discounted value by (1 - rate) a second time.",
+    "severity_adjusted": null,
+    "confidence": 4,
+    "checks_performed": [
+      "read app/service.py:1-30"
+    ]
+  },
+  "__default__": {
+    "findings": [],
+    "files_read_outside_packet": []
+  }
+}

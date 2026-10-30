@@ -1,0 +1,11 @@
+id: no-shell-true
+language: python
+severity: error
+message: "subprocess call with shell=True invites shell injection; pass an argument list without shell=True."
+rule:
+  pattern: subprocess.$F($$$ARGS)
+  has:
+    field: arguments
+    has:
+      kind: keyword_argument
+      regex: "^shell\\s*=\\s*True$"

@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "source": {"path": "/REPO/uv.lock", "type": "lockfile"},
+      "packages": [
+        {
+          "package": {"name": "requests", "version": "2.19.0", "ecosystem": "PyPI"},
+          "vulnerabilities": [
+            {"id": "GHSA-j8r2-6x86-q33q", "summary": "Unintended leak of Proxy-Authorization header"},
+            {"id": "GHSA-x84v-xcm2-53pg", "summary": "Insufficiently protected credentials"}
+          ],
+          "groups": [{"ids": ["GHSA-j8r2-6x86-q33q"]}, {"ids": ["GHSA-x84v-xcm2-53pg"]}]
+        },
+        {
+          "package": {"name": "urllib3", "version": "1.24.1", "ecosystem": "PyPI"},
+          "vulnerabilities": [{"id": "GHSA-www2-v7xj-xrc6", "summary": "CRLF injection"}],
+          "groups": [{"ids": ["GHSA-www2-v7xj-xrc6"]}]
+        }
+      ]
+    }
+  ]
+}

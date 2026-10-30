@@ -1,0 +1,3 @@
+[
+  {"line_start": 8, "line_end": 8, "category": "security", "severity": "critical", "description": "The realpath containment check was removed, so a name like ../../etc/passwd reads files outside BASE_DIR (path traversal)."}
+]

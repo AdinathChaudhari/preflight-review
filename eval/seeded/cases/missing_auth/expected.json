@@ -1,0 +1,3 @@
+[
+  {"line_start": 13, "line_end": 15, "category": "security", "severity": "critical", "description": "delete_order lost its require_role and current_user checks, so any caller can delete orders without authentication."}
+]

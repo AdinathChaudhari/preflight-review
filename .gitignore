@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.preflight/reviews/
+.preflight/state.json
+.preflight/cache/
+eval/results/
+
+# Local-only image working files
+docs/media/ABOUT-IMAGE.md
+docs/media/hero-glass.jpg

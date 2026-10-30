@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "CONFIRMED",
+        "REFUTED",
+        "UNKNOWN"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reason": {
+      "type": "string"
+    },
+    "severity_adjusted": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "critical",
+        "major",
+        "minor",
+        "trivial",
+        null
+      ]
+    },
+    "confidence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "checks_performed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "verdict",
+    "evidence",
+    "reason",
+    "severity_adjusted",
+    "confidence",
+    "checks_performed"
+  ],
+  "additionalProperties": false
+}
