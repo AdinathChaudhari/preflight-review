@@ -209,6 +209,21 @@ def dropped_records(run: RunResult) -> list[dict]:
 
 
 MAX_EXCLUDED = 50
+MAX_DROPPED = 50
+
+
+def _dropped_section(run: RunResult, recs: list[dict]) -> str:
+    """One line per dropped candidate, so a human can spot a wrong drop."""
+    if not recs:
+        return "none"
+    lines = []
+    for r in recs[:MAX_DROPPED]:
+        cand = r.get("candidate") or {}
+        where = f" ({cand['file']}:{cand.get('start_line')})" if cand.get("file") else ""
+        lines.append(f"- {r.get('stage')}: {r.get('title') or '(untitled)'}{where} \u2014 {r.get('reason')}")
+    if len(recs) > MAX_DROPPED:
+        lines.append(f"- ... and {len(recs) - MAX_DROPPED} more (see {run.basename}.dropped.jsonl)")
+    return "\n".join(lines)
 
 
 def _not_reviewed_section(run: RunResult, entries: list[tuple[str, str]]) -> str:
@@ -282,6 +297,9 @@ def render_report(run: RunResult) -> str:
     out += [_blocks(p.report, 1, run), ""]
 
     out += [f"## Unverified ({len(p.unverified)})", "", _blocks(p.unverified, len(p.report) + 1, run), ""]
+
+    recs = dropped_records(run)
+    out += [f"## Dropped ({len(recs)})", "", _dropped_section(run, recs), ""]
 
     out += ["## Previously reported (still tracked)", ""]
     out.append(

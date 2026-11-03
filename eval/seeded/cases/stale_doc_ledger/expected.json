@@ -1,0 +1,3 @@
+[
+  {"line_start": 5, "line_end": 6, "category": "maintainability", "severity": "minor", "description": "The branch ledger says apply_coupon rejects malformed codes with a _CODE_RE shape guard, but the second commit removed the guard: unknown or malformed codes now give no discount instead of raising, so the ledger describes behaviour that never shipped."}
+]

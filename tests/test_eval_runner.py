@@ -26,7 +26,7 @@ def _offline(monkeypatch):
 
 def test_load_seeded_cases():
     cases = load_seeded_cases(CASES)
-    assert len(cases) == 8
+    assert len(cases) == 9
     assert [c.name for c in cases] == sorted(c.name for c in cases)
     by = {c.name: c for c in cases}
     assert by["benign_refactor"].expected == []
@@ -42,8 +42,8 @@ def test_load_seeded_missing_file(tmp_path):
 
 def test_seeded_cases_have_distinct_paths():
     cases = load_seeded_cases(CASES)
-    assert len(cases) == 8
-    assert len({c.file for c in cases}) == 8
+    assert len(cases) == 9
+    assert len({c.file for c in cases}) == 9
     assert all(c.file != "app/target.py" for c in cases)
     for c in cases:
         assert all(g.file == c.file for g in c.expected)
@@ -90,12 +90,45 @@ def test_materialise_two_commits(tmp_path):
     assert (repo / ".preflight/config.yaml").is_file()
 
 
+def test_materialise_multi_commit_case(tmp_path):
+    case = next(c for c in load_seeded_cases(CASES) if c.name == "stale_doc_ledger")
+    repo = materialise(case, tmp_path)
+    log = subprocess.run(
+        ["git", "log", "--format=%s", "seed/stale_doc_ledger"], cwd=repo, capture_output=True, text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert log == ["stale_doc_ledger: 02-drop-guard", "stale_doc_ledger: 01-add-guard",
+                   "stale_doc_ledger: before"]
+    # The doc still claims the guard; the final code no longer has it.
+    assert "_CODE_RE" in (repo / "docs/CHANGES.md").read_text()
+    assert "_CODE_RE" not in (repo / "app/billing/coupons.py").read_text()
+    changed = subprocess.run(["git", "diff", "--name-only", "main"], cwd=repo, capture_output=True,
+                             text=True, check=True).stdout.split()
+    assert changed == ["app/billing/coupons.py", "docs/CHANGES.md"]
+
+
+def test_multi_commit_layout_validation(tmp_path):
+    d = tmp_path / "c"
+    (d / "commits" / "01").mkdir(parents=True)
+    (d / "expected.json").write_text("[]")
+    with pytest.raises(SchemaError):  # empty commit dir
+        load_seeded_cases(tmp_path)
+    (d / "commits" / "01" / "x.py").write_text("x = 1\n")
+    (d / "expected.json").write_text(json.dumps([{"file": "../x.md", "line_start": 1, "line_end": 1,
+                                                  "category": "correctness", "severity": "minor",
+                                                  "description": "d"}]))
+    with pytest.raises(SchemaError):  # expected file escapes the repo
+        load_seeded_cases(tmp_path)
+
+
 def test_run_eval_seeded_fake(tmp_path):
     res = run_eval("seeded", ROOT, backend_name="fake", judge=False, out_dir=tmp_path)
-    assert res["ep_recall"] == pytest.approx(6 / 7)
+    assert res["ep_recall"] == pytest.approx(7 / 8)
     assert res["precision"] == 1.0
     assert res["agreement_rate"] is None and res["judge"] == "none"
-    assert len(res["cases"]) == 8
+    assert len(res["cases"]) == 9
+    stale = next(c for c in res["cases"] if c["name"] == "stale_doc_ledger")
+    assert len(stale["matched"]) == 1  # doc finding with code evidence survives the prefilter
     on_disk = json.loads(Path(res["path"]).read_text())
     for key in ("set", "generated_at", "backend", "judge", "precision", "ep_recall", "snr",
                 "snr_note", "f1", "n_findings", "n_goldens", "per_category_recall",
@@ -127,7 +160,7 @@ def test_cli_eval_seeded(tmp_path, capsys, monkeypatch):
     rc = main(["eval", "--set", "seeded", "--backend", "fake", "--no-judge", "--out", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "eval seeded: precision=1.000 ep_recall=0.857" in out
+    assert "eval seeded: precision=1.000 ep_recall=0.875" in out
     assert list(tmp_path.glob("*-seeded.json"))
 
 
