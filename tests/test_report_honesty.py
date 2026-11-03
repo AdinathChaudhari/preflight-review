@@ -103,3 +103,20 @@ def test_dropped_jsonl(scope, tmp_path):
     assert all(isinstance(json.loads(x), dict) for x in lines)
     md = out["md"].read_text()
     assert f"Dropped: 4 (see {run.basename}.dropped.jsonl)" in md
+
+
+def test_report_lists_each_dropped_title_and_reason(scope):
+    # A wrong drop must be visible to a human, not hidden behind a count.
+    pre = _f(stable_id="p1", title="Index describes a guard the branch removed")
+    pol = _f(stable_id="n1", title="Nit")
+    fd = {"stage": "finder", "lane": "correctness", "batch": 0, "reason": "schema", "candidate": {}}
+    run = _run(scope, policy=PolicyResult(dropped=[(pol, "below profile chill")]),
+               finder_dropped=[fd], prefilter_dropped=[(pre, "docs file")])
+    md = render_report(run)
+    section = md.split("## Dropped (3)\n\n", 1)[1].split("\n\n", 1)[0]
+    lines = section.splitlines()
+    assert lines == [
+        "- finder: (untitled) — schema",
+        f"- prefilter: Index describes a guard the branch removed ({pre.file}:{pre.start_line}) — docs file",
+        f"- policy: Nit ({pol.file}:{pol.start_line}) — below profile chill",
+    ]

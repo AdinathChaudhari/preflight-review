@@ -6,7 +6,7 @@ Measures how well the reviewer finds real bugs and how quiet it is. Three sets, 
 
 | Set | Source | Measures |
 |---|---|---|
-| `seeded` | `eval/seeded/cases/<name>/{before.py,after.py,expected.json,meta.json}`: 7 injected bugs plus one benign refactor | EP recall, precision, SNR, per-category recall |
+| `seeded` | `eval/seeded/cases/<name>/{before.py,after.py,expected.json,meta.json}` (or `before/` + `commits/NN-name/` trees for multi-commit cases): 8 injected bugs plus one benign refactor | EP recall, precision, SNR, per-category recall |
 | `golden` | `eval/golden/*.jsonl` (hand-labelled CodeRabbit history, rows with `is_real` and `in_scope` true and a `commit`) | recall of real bugs, precision |
 | `clean` | `eval/clean/cases.jsonl` (merged commits that should produce no confirmed findings) | confirmed findings per case, target 0 |
 
@@ -55,11 +55,15 @@ Golden and clean runs never touch your repo: each commit is cloned with `git clo
 
 `eval/clean/cases.jsonl` holds one JSON object per line: `{"repo_path", "base_sha", "head_sha", "note"}`. Lines starting with `#` and blank lines are ignored. Fill it with 5 to 10 merged commits you consider bug-free.
 
+## Multi-commit cases
+
+A case directory with `commits/` uses this layout instead of `before.py`/`after.py`: `before/` is a file tree committed on `main` (optional), and each `commits/<NN-name>/` tree is written and committed in name order on the seed branch. Expected items may set `"file"` per item; it defaults to meta.json's `file`. See `eval/seeded/cases/stale_doc_ledger/README.md`.
+
 ## Determinism
 
 Each case's `meta.json` is `{"file": "<relative posix path>"}`: the repo path the case's code is written to (and that expected items and findings refer to). It must be non-empty, relative, and contain no `..`; when absent it defaults to `app/target.py`. Give each case a distinct realistic path.
 
-`tests/fixtures/fake/eval_seeded.json` scripts the fake backend per case (`__per_case__`), so the seeded numbers are fixed: 6 of 7 bugs found (nonatomic_claim is deliberately missed), precision 1.0, ep_recall 0.857143. Use it to check the harness itself, not the reviewer.
+`tests/fixtures/fake/eval_seeded.json` scripts the fake backend per case (`__per_case__`), so the seeded numbers are fixed: 7 of 8 bugs found (nonatomic_claim is deliberately missed), precision 1.0, ep_recall 0.875. `stale_doc_ledger` is multi-commit: a doc ledger written in commit 1, the behaviour it describes removed in commit 2; before the prefilter kept doc findings with code evidence, it scored 0.75. Use it to check the harness itself, not the reviewer.
 
 ## Results
 
