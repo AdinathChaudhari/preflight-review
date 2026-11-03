@@ -56,6 +56,22 @@ def _suppressing_learning(f: Finding, learnings: list[Learning]) -> Learning | N
     return None
 
 
+def _is_doc(path: str) -> bool:
+    return path.lower().endswith(DOC_SUFFIXES)
+
+
+def _cites_changed_code(f: Finding, scope: Scope) -> bool:
+    """True when any evidence entry points at a non-doc file changed in this diff.
+
+    A finding on a doc that quotes changed code is a doc-code consistency claim
+    (e.g. a ledger describing a guard the branch removed), not a prose nitpick.
+    File-level on purpose: when code is added then removed on the branch, the
+    cited line is unchanged context, but its file is still in the diff.
+    """
+    changed = {fc.path for fc in scope.files}
+    return any(e.file in changed and not _is_doc(e.file) for e in f.evidence)
+
+
 def _parse_caused_by(value: str) -> tuple[str, int] | None:
     path, sep, line = value.rpartition(":")
     if not sep or not path or not line.strip().isdigit():
@@ -75,7 +91,11 @@ def prefilter(
     suppressed: list[tuple[Finding, str]] = []
     dropped: list[tuple[Finding, str]] = []
     for f in findings:
-        if f.file.lower().endswith(DOC_SUFFIXES) and not any(r.match(f.file) for r in instr):
+        if (
+            _is_doc(f.file)
+            and not any(r.match(f.file) for r in instr)
+            and not _cites_changed_code(f, scope)
+        ):
             dropped.append((f, "docs file"))
             continue
         learning = _suppressing_learning(f, learnings)

@@ -507,6 +507,91 @@
           "read app/utils/formatting.py:1-30"
         ]
       }
+    },
+    "stale_doc_ledger": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": []
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "docs/CHANGES.md",
+            "start_line": 5,
+            "end_line": 6,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "maintainability",
+            "severity": "minor",
+            "effort": "quick_win",
+            "title": "Ledger describes a coupon shape guard that the branch removed",
+            "claim": "docs/CHANGES.md says apply_coupon rejects malformed codes with a _CODE_RE guard, but the final coupons.py has no guard and gives unknown codes no discount.",
+            "failure_scenario": "A reader trusts the ledger and assumes malformed codes raise ValueError; in the shipped code they silently get 0 %.",
+            "why_it_matters": "The ledger records a change that never shipped.",
+            "suggested_fix": "Rewrite both rows: codes are normalised and looked up; unknown codes give no discount.",
+            "evidence": [
+              {
+                "file": "docs/CHANGES.md",
+                "line": 5,
+                "quote": "| `app/billing/coupons.py` | `apply_coupon` rejects malformed codes: a `_CODE_RE` shape guard raises `ValueError` before the table lookup. |"
+              },
+              {
+                "file": "app/billing/coupons.py",
+                "line": 13,
+                "quote": "    pct = table.get(code.strip().upper(), 0)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "docs/CHANGES.md",
+            "line": 5,
+            "quote": "| `app/billing/coupons.py` | `apply_coupon` rejects malformed codes: a `_CODE_RE` shape guard raises `ValueError` before the table lookup. |"
+          },
+          {
+            "file": "app/billing/coupons.py",
+            "line": 13,
+            "quote": "    pct = table.get(code.strip().upper(), 0)"
+          }
+        ],
+        "reason": "The guard is absent from the final coupons.py.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/billing/coupons.py:1-14",
+          "read docs/CHANGES.md:1-6"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "docs/CHANGES.md",
+            "line": 5,
+            "quote": "| `app/billing/coupons.py` | `apply_coupon` rejects malformed codes: a `_CODE_RE` shape guard raises `ValueError` before the table lookup. |"
+          },
+          {
+            "file": "app/billing/coupons.py",
+            "line": 13,
+            "quote": "    pct = table.get(code.strip().upper(), 0)"
+          }
+        ],
+        "reason": "The guard is absent from the final coupons.py.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/billing/coupons.py:1-14",
+          "read docs/CHANGES.md:1-6"
+        ],
+        "confidence_10": 9
+      }
     }
   }
 }
