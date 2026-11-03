@@ -4,7 +4,7 @@ from pathlib import Path
 
 from preflight_review.config import Config, PathInstruction
 from preflight_review.context.learnings import Learning
-from preflight_review.findings import Category, Lane, Severity
+from preflight_review.findings import Category, Evidence, Lane, Severity
 from preflight_review.findings import Finding, stable_id
 from preflight_review.scope import FileChange, Hunk, Scope
 from preflight_review.stages.cluster import cluster, prefilter
@@ -35,6 +35,47 @@ def test_docs_file_kept_with_path_instructions():
     cfg = Config(path_instructions=[PathInstruction("docs/**", "check docs")])
     kept, _, dropped = run([mk(file="docs/guide.md")], cfg)
     assert len(kept) == 1 and not dropped
+
+
+def _doc_finding(evidence):
+    return mk(file="archive/_INDEX.md", s=12, e=15, cat=Category.maintainability,
+              sev=Severity.trivial, lane=Lane.nitpick,
+              title="Index describes a guard that the final commit removed",
+              evidence=evidence)
+
+
+def test_docs_finding_with_code_evidence_in_diff_kept():
+    # A doc that makes a false claim about code in the same diff is a
+    # consistency bug, not a prose nitpick: the finder cites the code line.
+    f = _doc_finding([
+        Evidence("archive/_INDEX.md", 12, "| a.py | gets a shape guard |"),
+        Evidence("a.py", 5, "    speciality: str"),
+    ])
+    kept, _, dropped = run([f])
+    assert kept == [f] and dropped == []
+
+
+def test_docs_finding_citing_unchanged_line_of_changed_code_file_kept():
+    # Real miss: the guard was added then removed, so the cited line itself is
+    # unchanged context, but its file is in the diff.
+    f = _doc_finding([Evidence("a.py", 500, "    speciality: str")])
+    kept, _, dropped = run([f])
+    assert kept == [f] and dropped == []
+
+
+def test_docs_finding_with_prose_only_evidence_dropped():
+    f = _doc_finding([
+        Evidence("archive/_INDEX.md", 12, "| a.py | gets a shape guard |"),
+        Evidence("README.md", 3, "see the index"),
+    ])
+    kept, _, dropped = run([f])
+    assert kept == [] and dropped == [(f, "docs file")]
+
+
+def test_docs_finding_citing_code_outside_diff_dropped():
+    f = _doc_finding([Evidence("other.py", 5, "x = 1")])
+    kept, _, dropped = run([f])
+    assert kept == [] and dropped == [(f, "docs file")]
 
 
 def test_outside_diff_without_caused_by_demoted():
