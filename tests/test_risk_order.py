@@ -24,6 +24,11 @@ from preflight_review.context.risk import (
     ("Dockerfile", "config"),
     ("proto/x_pb2.py", "docs"),
     ("weird.xyz", "config"),
+    ("CLAUDE.md", "source"),
+    ("pkg/AGENTS.md", "source"),
+    ("skills/review/SKILL.md", "source"),
+    (".claude/commands/ship.md", "source"),
+    (".claude/settings.json", "config"),
 ])
 def test_risk_tier(path, tier):
     assert risk_tier(path) == tier

@@ -1,0 +1,3 @@
+[
+  {"line_start": 3, "line_end": 3, "category": "correctness", "severity": "minor", "description": "PROGRESS.md says 7 backups are kept while PLAN.md, changed in the same diff, says 8 days."}
+]

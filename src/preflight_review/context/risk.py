@@ -5,7 +5,9 @@ Files are ordered by risk tier (source, test, config, docs), then by risk score
 
 Tier rules (path-only, first match wins):
   docs   -- lockfiles, generated files, fixtures/data, docs. A .md/.txt/.jinja2/.j2
-            file under a `prompts` directory is "source" instead (prompts are behaviour).
+            file under a `prompts` directory is "source" instead (prompts are behaviour),
+            and so are agent-instruction files: SKILL.md, CLAUDE.md, AGENTS.md and any
+            .md under a `.claude` directory (`.claude/settings.json` stays config).
   test   -- tests/test/__tests__/spec directories, test_*.py, *_test.py, *_test.go,
             conftest.py, *.test.* / *.spec.* JS/TS files.
   config -- CI/plugin/devcontainer directories, Dockerfile*, Makefile, pyproject etc.,
@@ -51,6 +53,7 @@ _CONFIG_DIRS = {".github", ".gitlab", ".circleci", ".claude-plugin", ".devcontai
 _CONFIG_NAMES = {"Makefile", "pyproject.toml", "setup.cfg", "tox.ini",
                  ".pre-commit-config.yaml"}
 _CONFIG_EXTS = {".toml", ".ini", ".cfg", ".yaml", ".yml", ".json", ".env"}
+_AGENT_DOC_NAMES = {"SKILL.md", "CLAUDE.md", "AGENTS.md"}
 _JS_TEST = re.compile(r"\.(test|spec)\.(js|ts|tsx|jsx)$")
 _SPLIT = re.compile(r"[_\-./]+")
 
@@ -59,6 +62,8 @@ def risk_tier(path: str) -> str:
     p = PurePosixPath(path)
     name, parts, ext = p.name, set(p.parts[:-1]), p.suffix.lower()
     if (ext in {".md", ".txt", ".jinja2", ".j2"}) and "prompts" in parts:
+        return "source"
+    if name in _AGENT_DOC_NAMES or (ext == ".md" and ".claude" in parts):
         return "source"
     if (
         name.endswith(".lock") or name in _LOCK_NAMES
@@ -87,6 +92,14 @@ def risk_tier(path: str) -> str:
     if ext in _CODE_EXTS:
         return "source"
     return "config"
+
+
+def is_prose_doc(path: str) -> bool:
+    """A .md/.rst/.txt file in risk tier "docs" (not a prompt or agent-instruction file,
+    and not a requirements*/constraints* dependency list)."""
+    if PurePosixPath(path).name.lower().startswith(("requirements", "constraints")):
+        return False
+    return path.lower().endswith((".md", ".rst", ".txt")) and risk_tier(path) == "docs"
 
 
 def is_sensitive(path: str) -> bool:

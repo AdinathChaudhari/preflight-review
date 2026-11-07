@@ -18,7 +18,10 @@ from .conftest import branch, commit, make_repo
 from .test_pipeline_e2e import SERVICE_BAD, SERVICE_BASE
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fake"
-EMPTY = {"findings": [], "files_read_outside_packet": []}
+EMPTY = {
+    "findings": [], "files_read_outside_packet": [],
+    "coverage": [{"file": "app/x.py", "symbol_or_hunk": "f", "inputs_considered": "none", "result": "no issue"}],
+}
 
 
 def no_gh(*a, **k):
@@ -59,7 +62,7 @@ def test_lens_selection_single(svc):
     assert [c.role for c in be.calls if c.role.startswith("finder:")] == ["finder:correctness"]
 
 
-def test_lens_selection_opt_in_subset(svc):
+def test_lens_selection_two_lenses(svc):
     repo = svc("version: 1\nlenses: [correctness, data_concurrency]\nsecurity_lane: false\n")
     be = FakeBackend(default=EMPTY)
     review(repo, be)

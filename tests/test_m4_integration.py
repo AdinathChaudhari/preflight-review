@@ -14,7 +14,10 @@ from preflight_review.pipeline import ReviewOptions, run_review
 from .conftest import branch, commit, make_repo
 from .test_pipeline_e2e import SERVICE_BAD, SERVICE_BASE
 
-EMPTY = {"findings": [], "files_read_outside_packet": []}
+EMPTY = {
+    "findings": [], "files_read_outside_packet": [],
+    "coverage": [{"file": "app/x.py", "symbol_or_hunk": "f", "inputs_considered": "none", "result": "no issue"}],
+}
 HEADING = "# Prior review comments in these files"
 
 

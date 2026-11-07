@@ -1,4 +1,8 @@
-"""ruff: lint changed Python files into Findings."""
+"""ruff: lint changed Python files into Findings.
+
+Rules in `tools.ruff.test_ignore` (assert, hardcoded test passwords, temp paths, non-crypto
+random) are not reported on `tools.ruff.test_paths`: in tests they are noise, not bugs.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from pathlib import Path
 from preflight_review.config import Config
 from preflight_review.errors import ToolError
 from preflight_review.findings import Category, Evidence, Finding, Severity
-from preflight_review.scope import Scope
+from preflight_review.scope import Scope, glob_to_regex
 from preflight_review.tools import base
 from preflight_review.tools.base import (
     ToolStatus,
@@ -23,8 +27,10 @@ from preflight_review.tools.base import (
 
 
 def _severity(code: str) -> Severity:
+    # Lint pattern matches, not proven vulnerabilities: they are reported without a model
+    # vote, so they must not raise merge risk on their own. The security lane finds real ones.
     if code.startswith("S"):
-        return Severity.major
+        return Severity.minor
     if code.startswith("B") or code in ("F821", "F811") or code.startswith("E9"):
         return Severity.minor
     return Severity.trivial
@@ -74,12 +80,22 @@ def parse_ruff(json_text: str, repo_root: Path) -> list[Finding]:
     return out
 
 
+def drop_test_noise(findings: list[Finding], config: Config) -> list[Finding]:
+    """Findings minus `test_ignore` rules on files matching `test_paths`."""
+    ignore = set(config.tools.ruff.test_ignore)
+    globs = [glob_to_regex(g) for g in config.tools.ruff.test_paths if g]
+    return [
+        f for f in findings
+        if not (f.rule_id in ignore and any(g.match(f.file) for g in globs))
+    ]
+
+
 def run_ruff(scope: Scope, config: Config) -> tuple[list[Finding], ToolStatus]:
+    files = scannable_files(scope, ".py")
     binary = base.which("ruff")
     if binary is None:
-        return [], missing_status("ruff")
+        return [], missing_status("ruff", relevant=bool(files))
     version = tool_version(binary, scope.repo_root)
-    files = scannable_files(scope, ".py")
     if not files:
         return [], ToolStatus("ruff", True, version, False, note="no python files changed")
     started = time.monotonic()
@@ -91,8 +107,9 @@ def run_ruff(scope: Scope, config: Config) -> tuple[list[Finding], ToolStatus]:
     code, out, err = run(cmd, scope.repo_root)
     if code not in (0, 1) and not out.strip():
         return [], ToolStatus(
-            "ruff", True, version, ran=False, note=f"failed (exit {code}): {err.strip()[:200]}"
+            "ruff", True, version, ran=False, note=f"failed (exit {code}): {err.strip()[:200]}",
+            degraded=True,
         )
-    findings = parse_ruff(out, scope.repo_root)
+    findings = drop_test_noise(parse_ruff(out, scope.repo_root), config)
     ms = int((time.monotonic() - started) * 1000)
     return findings, ToolStatus("ruff", True, version, True, len(findings), duration_ms=ms)

@@ -1,4 +1,4 @@
-"""Opus security lane: one traced-finding call, plus the security verifier helpers."""
+"""Security lane (models.security): one traced-finding call, plus the security verifier helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import logging
 
 from preflight_review import prompts
-from preflight_review.config import Config
+from preflight_review.config import Config, stage_effort
 from preflight_review.context.packer import Packet
 from preflight_review.context.symbols import RepoIndex
 from preflight_review.findings import Finding, Verdict, to_dict
@@ -18,7 +18,7 @@ from preflight_review.stages.finders import FinderOutcome, _convert, packet_syst
 logger = logging.getLogger("preflight_review.security")
 
 SECURITY_MAX_TURNS = 8
-SECURITY_MAX_TURNS_DEEP = 12
+SECURITY_MAX_TURNS_DEEP = 18
 MIN_CONFIDENCE_10 = 8
 
 
@@ -54,7 +54,8 @@ def run_security_lane(
         schema=load_schema("security"),
         cwd=scope.repo_root,
         max_turns=SECURITY_MAX_TURNS_DEEP if config.mode == "deep" else SECURITY_MAX_TURNS,
-        max_budget_usd=config.budget_usd / 3,
+        max_budget_usd=None if config.budget_usd is None else config.budget_usd / 3,
+        effort=stage_effort(config, config.models.security),
     )
     try:
         res = backend.run(req)
@@ -95,15 +96,23 @@ def security_verifier_prompt(finding: Finding) -> str:
     )
 
 
+def parse_conf10(value) -> int | None:
+    """confidence_10 as an int ("9" and 9.0 count as 9), or None for a bool or junk. Shared
+    by the verdict rule and the stored vote, so the aggregate re-scores the same way."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def security_verdict_rule(result: dict) -> Verdict:
     verdict = result.get("verdict")
     if verdict == "REFUTED":
         return Verdict.REFUTED
     if verdict == "CONFIRMED":
-        try:
-            conf = int(result.get("confidence_10", 0))
-        except (TypeError, ValueError):
-            conf = 0
+        conf = parse_conf10(result.get("confidence_10", 0)) or 0
         if conf >= MIN_CONFIDENCE_10:
             return Verdict.CONFIRMED
     return Verdict.UNKNOWN

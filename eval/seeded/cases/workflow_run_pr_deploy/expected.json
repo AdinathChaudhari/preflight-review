@@ -1,0 +1,4 @@
+[
+  {"line_start": 11, "line_end": 16, "category": "security", "severity": "major", "description": "The deploy job runs on any successful ci run, and ci also runs on pull_request, so a pull request's code (head_sha) is deployed to production with the deploy identity; the job must check github.event.workflow_run.event == 'push' and the branch."},
+  {"line_start": 10, "line_end": 10, "category": "concurrency", "severity": "minor", "description": "The deploy workflow has no concurrency group, so two ci runs finishing close together start two production deploys at once and the older commit can land last, rolling production back; add a concurrency group for the production deploy (cancel-in-progress: false)."}
+]

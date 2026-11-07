@@ -143,8 +143,10 @@ def run_osv(scope: Scope, config: Config) -> tuple[list[Finding], ToolStatus]:
     ms = int((time.monotonic() - started) * 1000)
     if notes and not scanned:
         return findings, ToolStatus(
-            "osv-scanner", True, version, False, note="; ".join(notes)[:400], duration_ms=ms
+            "osv-scanner", True, version, False, note="; ".join(notes)[:400], duration_ms=ms,
+            degraded=True,
         )
     return findings, ToolStatus(
-        "osv-scanner", True, version, True, len(findings), note="; ".join(notes)[:400], duration_ms=ms
+        "osv-scanner", True, version, True, len(findings), note="; ".join(notes)[:400],
+        duration_ms=ms, degraded=bool(notes),
     )

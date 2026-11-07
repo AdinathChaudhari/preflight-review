@@ -1,0 +1,3 @@
+[
+  {"line_start": 8, "line_end": 9, "category": "security", "severity": "major", "description": "CORS allows any origin while allowing credentials; the framework then reflects the caller's Origin, so any website can make cookie-authenticated requests and read the responses."}
+]

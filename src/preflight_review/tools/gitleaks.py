@@ -2,6 +2,10 @@
 
 Secret material is never read: scans use --redact and the Secret/Match/Line
 fields are ignored by the parser.
+
+A `.gitleaks.toml` at the repository root (gitleaks' own config format: extra rules and
+`[[allowlists]]`) is passed to every scan with `--config`. Without it, a `gitleaks dir`
+scan of the temporary worktree copy would not see the repo's allowlists.
 """
 
 from __future__ import annotations
@@ -72,11 +76,20 @@ def parse_gitleaks(json_text: str, repo_root: Path) -> list[Finding]:
     return out
 
 
+CONFIG_FILE = ".gitleaks.toml"
+
+
+def config_args(repo_root: Path) -> list[str]:
+    """`--config <repo>/.gitleaks.toml` when the repository has one, else nothing."""
+    path = Path(repo_root) / CONFIG_FILE
+    return ["--config", str(path)] if path.is_file() else []
+
+
 def _scan(binary: str, args: list[str], repo_root: Path) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         report = Path(tmp) / "report.json"
         cmd = [
-            binary, *args, "-f", "json", "-r", str(report),
+            binary, *args, *config_args(repo_root), "-f", "json", "-r", str(report),
             "--redact", "--no-banner", "--exit-code", "0",
         ]
         code, _, err = run(cmd, repo_root)

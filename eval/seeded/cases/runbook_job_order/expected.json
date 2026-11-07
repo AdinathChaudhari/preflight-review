@@ -1,0 +1,3 @@
+[
+  {"line_start": 5, "line_end": 5, "category": "correctness", "severity": "major", "description": "The runbook applies the migrate Job but never deletes it. On every deploy after the first, the completed Job from the last release still exists: with the unchanged :latest template the apply reports it unchanged and step 2 passes at once, so the new release's migrations never run; any template change fails the apply because a Job's pod template is immutable. Delete the old Job before the apply (or give each run a unique name)."}
+]

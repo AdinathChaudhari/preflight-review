@@ -1,7 +1,10 @@
 # Bundled ast-grep rules
 
 Packaged rules, installed into a repo with `preflight-review init --with-ast-rules`
-(copies `rules/*.yml` into `.preflight/ast-rules/`).
+(copies `rules/*.yml` into `.preflight/ast-rules/`). Rules in `.preflight/ast-rules/` run on
+every review when `tools.ast_grep` is on. An extension module can load further packaged rule
+folders without `init` (see `preflight_review/extensions/`); a rule already copied into
+`.preflight/ast-rules/` under the same file name is not loaded twice.
 
 `ast-grep scan` loads EVERY `*.yml` in a rule directory as a rule. Test cases therefore live
 in `tests/`, never in `rules/`, and must never be copied into `.preflight/ast-rules/`.

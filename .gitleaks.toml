@@ -1,0 +1,15 @@
+# gitleaks config: the default rules plus an allowlist for test fixtures.
+# preflight-review passes a repository's .gitleaks.toml to every gitleaks scan it runs
+# (src/preflight_review/tools/gitleaks.py), so this file applies to its own reviews too.
+title = "preflight-review"
+
+[extend]
+useDefault = true
+
+# A PEM header followed by a literal backslash-n and the word REDACTED is a test fixture
+# written as a Python string (tests/test_tools.py), not a key. A real key has base64 after
+# its header, so it does not match and is still reported (tests/test_tools.py checks both).
+[[allowlists]]
+description = "test fixtures: PEM headers with a REDACTED body"
+regexTarget = "match"
+regexes = ['''PRIVATE KEY(?: BLOCK)?-----\\nREDACTED\\n''']

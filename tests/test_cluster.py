@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
+
+import pytest
 
 from preflight_review.config import Config, PathInstruction
 from preflight_review.context.learnings import Learning
@@ -146,3 +149,167 @@ def test_far_apart_not_merged_and_order_stable():
     a = mk(s=1, e=1, title="a")
     b = mk(s=50, e=50, title="b")
     assert cluster([a, b]) == [a, b]
+
+
+# ------------------------------------------------- doc scope (prompt and agent files)
+
+
+def _fc(path, added=10, deleted=0):
+    hunk = Hunk(0, 0, 1, added, added_ranges=[(1, max(1, added))])
+    return FileChange(path, None, "M", False, [hunk], added, deleted, None, None)
+
+
+def scope_of(*fcs, root=Path(".")):
+    return Scope(root, "r", "b", "main", "x", "y", list(fcs), [], [], "h", False)
+
+
+def test_prompt_md_finding_kept():
+    f = mk(file="prompts/agent/system.md", s=3, e=3,
+           evidence=[Evidence("prompts/agent/system.md", 3, "Always answer in JSON.")])
+    kept, _, dropped = prefilter([f], scope_of(_fc("prompts/agent/system.md")), Config(), [])
+    assert kept == [f] and dropped == []
+
+
+def test_agent_instruction_files_kept():
+    for path in ("SKILL.md", "pkg/CLAUDE.md", "AGENTS.md", ".claude/commands/ship.md"):
+        f = mk(file=path, s=2, e=2, evidence=[Evidence(path, 2, "run the tests first")])
+        kept, _, _dropped = prefilter([f], scope_of(_fc(path)), Config(), [])
+        assert kept == [f], path
+
+
+def test_doc_vs_doc_contradiction_kept():
+    f = mk(file="PLAN.md", s=4, e=4, title="PLAN and PROGRESS disagree on the backup count",
+           evidence=[Evidence("PLAN.md", 4, "8 backups"), Evidence("PROGRESS.md", 9, "7 backups")])
+    sc = scope_of(_fc("PLAN.md"), _fc("PROGRESS.md"))
+    kept, _, dropped = prefilter([f], sc, Config(), [])
+    assert kept == [f] and dropped == []
+
+
+def test_doc_citing_unchanged_doc_dropped(tmp_path):
+    f = mk(file="PLAN.md", s=4, e=4,
+           evidence=[Evidence("PLAN.md", 4, "8 backups"), Evidence("OLD.md", 9, "7 backups")])
+    # repo_root is tmp_path (no OLD.md there), so the result does not depend on the CWD.
+    kept, _, dropped = prefilter([f], scope_of(_fc("PLAN.md"), root=tmp_path), Config(), [])
+    assert kept == [] and dropped == [(f, "docs file")]
+
+
+def test_internal_contradiction_kept():
+    f = mk(file="docs/runbook.md", s=4, e=20, cat=Category.contracts, sev=Severity.minor,
+           evidence=[Evidence("docs/runbook.md", 4, "three steps"),
+                     Evidence("docs/runbook.md", 20, "4. restart")])
+    kept, _, _ = prefilter([f], scope_of(_fc("docs/runbook.md")), Config(), [])
+    assert kept == [f]
+
+
+def test_single_quote_or_style_in_same_doc_still_dropped():
+    one = mk(file="docs/runbook.md", s=4, e=4,
+             evidence=[Evidence("docs/runbook.md", 4, "three steps")])
+    style = mk(file="docs/runbook.md", s=4, e=20, cat=Category.maintainability,
+               evidence=[Evidence("docs/runbook.md", 4, "a"), Evidence("docs/runbook.md", 20, "b")])
+    kept, _, dropped = prefilter([one, style], scope_of(_fc("docs/runbook.md")), Config(), [])
+    assert kept == [] and [r for _, r in dropped] == ["docs file", "docs file"]
+
+
+def test_fixture_json_finding_still_kept():
+    f = mk(file="tests/fixtures/case.json", s=2, e=2)
+    kept, _, _ = prefilter([f], scope_of(_fc("tests/fixtures/case.json")), Config(), [])
+    assert kept == [f]
+
+
+def _two_doc_evidence(sev, cat, lane=Lane.inline):
+    return mk(file="PLAN.md", s=4, e=4, sev=sev, cat=cat, lane=lane,
+              evidence=[Evidence("PLAN.md", 4, "8"), Evidence("PROGRESS.md", 9, "7")])
+
+
+def test_docs_heavy_auto_keeps_only_signal():
+    sc = scope_of(_fc("PLAN.md", 30), _fc("PROGRESS.md", 30), _fc("a.py", 10))
+    keep_minor = _two_doc_evidence(Severity.minor, Category.correctness)
+    keep_major = _two_doc_evidence(Severity.major, Category.maintainability)
+    drop_trivial = _two_doc_evidence(Severity.trivial, Category.correctness)
+    drop_style = _two_doc_evidence(Severity.minor, Category.maintainability)
+    drop_nit = _two_doc_evidence(Severity.minor, Category.correctness, lane=Lane.nitpick)
+    code = mk(file="a.py", sev=Severity.trivial, cat=Category.maintainability)
+    fs = [keep_minor, keep_major, drop_trivial, drop_style, drop_nit, code]
+    kept, _, dropped = prefilter(fs, sc, Config(), [])
+    assert kept == [keep_minor, keep_major, code]
+    assert {r for _, r in dropped} == {"docs file: low-signal finding in a docs-heavy diff"}
+    # docs_review: on keeps every reviewable doc finding.
+    kept_on, _, _ = prefilter(fs, sc, Config(docs_review="on"), [])
+    assert len(kept_on) == 6
+
+
+def test_docs_light_diff_keeps_low_signal_doc_finding():
+    sc = scope_of(_fc("PLAN.md", 5), _fc("PROGRESS.md", 5), _fc("a.py", 90))
+    f = _two_doc_evidence(Severity.trivial, Category.maintainability)
+    kept, _, _ = prefilter([f], sc, Config(), [])
+    assert kept == [f]
+
+
+def test_secret_file_finding_never_merged():
+    tool = mk(file=".env.local", s=1, e=1, cat=Category.secrets, sev=Severity.critical,
+              source="secret-files")
+    llm = mk(file=".env.local", s=1, e=2, cat=Category.security, sev=Severity.major,
+             source="llm:security")
+    out = cluster([tool, llm])
+    assert out == [tool, llm] and tool.cluster_members == []
+
+
+def test_gated_lens_finding_on_its_runbook_kept():
+    # A deploy runbook is a prose doc, but reviewing it is deploy_ci's job: no docs drop.
+    f = mk(file="deploy/k8s/README.md", source="llm:deploy_ci")
+    f.evidence = [Evidence("deploy/k8s/README.md", 10, "kubectl apply -f job.yaml")]
+    kept, _, dropped = run([f])
+    assert kept == [f] and dropped == []
+
+
+def test_gated_lens_finding_outside_its_paths_still_dropped():
+    kept, _, dropped = run([mk(file="docs/plan.md", source="llm:deploy_ci")])
+    assert kept == [] and dropped[0][1] == "docs file"
+
+
+def test_ungated_lens_finding_on_runbook_still_dropped():
+    kept, _, dropped = run([mk(file="deploy/k8s/README.md", source="llm:correctness")])
+    assert kept == [] and dropped[0][1] == "docs file"
+
+
+def test_changed_doc_line_citing_unchanged_repo_file_kept(tmp_path):
+    # New README text contradicts an unchanged config file: doc-code drift introduced here.
+    (tmp_path / "settings.toml").write_text("port = 8080\n")
+    f = mk(file="README.md", s=3, e=3, title="README gives the wrong port",
+           evidence=[Evidence("README.md", 3, "listens on 9000"),
+                     Evidence("settings.toml", 1, "port = 8080")])
+    sc = dataclasses.replace(scope_of(_fc("README.md")), repo_root=tmp_path)
+    kept, _, dropped = prefilter([f], sc, Config(), [])
+    assert kept == [f] and dropped == []
+    # docs_review: off keeps the changed-files-only rule.
+    kept, _, dropped = prefilter([f], sc, Config(docs_review="off"), [])
+    assert kept == [] and dropped == [(f, "docs file")]
+
+
+def test_unchanged_doc_line_or_missing_cited_file_still_dropped(tmp_path):
+    (tmp_path / "settings.toml").write_text("port = 8080\n")
+    sc = dataclasses.replace(scope_of(_fc("README.md", added=5)), repo_root=tmp_path)
+    old_line = mk(file="README.md", s=40, e=40,
+                  evidence=[Evidence("settings.toml", 1, "port = 8080")])
+    ghost = mk(file="README.md", s=3, e=3, evidence=[Evidence("nowhere.toml", 1, "port")])
+    kept, _, dropped = prefilter([old_line, ghost], sc, Config(), [])
+    assert kept == [] and [r for _, r in dropped] == ["docs file", "docs file"]
+
+
+@pytest.mark.parametrize("source,path", [
+    ("secret-files", ".env.txt"), ("gitleaks", "README.md"), ("osv", "requirements.txt"),
+    ("secret-files", "config/.env.local.md"),
+])
+def test_tool_findings_on_doc_files_survive_prefilter(source, path):
+    f = mk(file=path, s=1, e=1, cat=Category.secrets, sev=Severity.critical, source=source,
+           evidence=[Evidence(path, 1, "REDACTED")])
+    kept, _, dropped = prefilter([f], scope_of(_fc(path)), Config(docs_review="off"), [])
+    assert kept == [f] and dropped == []
+
+
+def test_requirements_files_are_not_prose_docs():
+    from preflight_review.context.risk import is_prose_doc
+
+    assert not is_prose_doc("requirements.txt") and not is_prose_doc("svc/requirements-dev.txt")
+    assert not is_prose_doc("constraints.txt")
+    assert is_prose_doc("docs/notes.txt") and is_prose_doc("README.md")

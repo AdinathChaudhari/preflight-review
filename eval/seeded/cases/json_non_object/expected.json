@@ -1,0 +1,3 @@
+[
+  {"line_start": 10, "line_end": 11, "category": "correctness", "severity": "minor", "description": "json.loads accepts any JSON value; a body that is a list, string or number has no .get, so event_id raises AttributeError instead of rejecting the request."}
+]

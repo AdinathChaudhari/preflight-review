@@ -1,0 +1,3 @@
+[
+  {"line_start": 8, "line_end": 9, "category": "security", "severity": "major", "description": "Student-supplied notes are appended to the grader's system prompt, so a student can instruct the model to award any score."}
+]

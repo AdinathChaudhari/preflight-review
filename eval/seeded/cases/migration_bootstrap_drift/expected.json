@@ -1,0 +1,3 @@
+[
+  {"line_start": 5, "line_end": 8, "category": "data_integrity", "severity": "major", "description": "The migration adds accounts.status with a CHECK, but db/schema.sql is not updated; bootstrap() builds fresh databases from schema.sql and marks 0002 applied, so they have no status column and suspended_accounts fails."}
+]
