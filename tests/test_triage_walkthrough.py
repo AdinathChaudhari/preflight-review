@@ -19,7 +19,10 @@ from .conftest import branch, commit, make_repo
 from .test_pipeline_e2e import SERVICE_BAD, SERVICE_BASE
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fake"
-EMPTY = {"findings": [], "files_read_outside_packet": []}
+EMPTY = {
+    "findings": [], "files_read_outside_packet": [],
+    "coverage": [{"file": "app/x.py", "symbol_or_hunk": "f", "inputs_considered": "none", "result": "no issue"}],
+}
 HAIKU_CFG = "version: 1\ntriage:\n  haiku: true\n"
 WT = {
     "summary": "Reworks pricing helpers.",
@@ -62,7 +65,9 @@ def test_whitespace_only_approved_without_model_call(tmp_path):
     res = triage(scope, Config(), be)
     assert res.per_file == {"a.py": "APPROVED", "b.py": "NEEDS_REVIEW"}
     assert res.notes["a.py"] == "whitespace-only"
-    assert be.calls == [] and not res.skip_llm
+    # Haiku triage is on by default: only the undecided file gets a call.
+    assert [c.model for c in be.calls] == ["haiku"] and "File: b.py" in be.calls[0].prompt
+    assert not res.skip_llm
 
 
 def test_whitespace_only_not_sent_to_haiku(tmp_path):
@@ -185,3 +190,33 @@ def test_all_lanes_failed_is_incomplete(tmp_path):
     r = two_file_repo(tmp_path, cfg="version: 1\n")
     run, _ = review(r, FakeBackend({}, default=None))
     assert run.outcome == "incomplete" and "all lanes failed" in run.incomplete_reasons
+
+
+def test_haiku_never_approves_doc_files_unless_docs_review_off(tmp_path):
+    r = make_repo(tmp_path, {"a.py": A_BASE, "PLAN.md": "8 backups\n"})
+    branch(r, "feature/x")
+    commit(r, {"a.py": "def f(x):\n    return x + 2\n", "PLAN.md": "7 backups\n"}, "c")
+    scope = resolve_scope(r, "main")
+    cfg = Config()
+    cfg.triage.haiku = True
+    be = FakeBackend({"triage": {"decision": "APPROVED", "reason": "typo"}})
+    res = triage(scope, cfg, be)
+    assert res.per_file == {"a.py": "APPROVED", "PLAN.md": "NEEDS_REVIEW"}
+    assert [c.prompt for c in be.calls if "File: PLAN.md" in c.prompt] == []
+    cfg.docs_review = "off"
+    res = triage(scope, cfg, FakeBackend({"triage": {"decision": "APPROVED", "reason": "typo"}}))
+    assert res.per_file["PLAN.md"] == "APPROVED"
+
+
+def test_workflow_change_does_not_send_unrelated_docs_past_haiku(tmp_path):
+    cfg = "version: 1\ndocs_review: \"off\"\ntriage:\n  haiku: true\n"
+    r = make_repo(tmp_path, {
+        "a.py": A_BASE, "PLAN.md": "8 backups\n", ".github/workflows/ci.yml": "on: push\n",
+        ".preflight/config.yaml": cfg,
+    })
+    branch(r, "feature/x")
+    commit(r, {"PLAN.md": "7 backups\n", ".github/workflows/ci.yml": "on: [push]\n"}, "c")
+    be = FakeBackend({"triage": haiku_by_path("PLAN.md")}, default=EMPTY)
+    run, _ = review(r, be)
+    assert any("File: PLAN.md" in c.prompt for c in be.calls if c.role == "triage")
+    assert "PLAN.md" in run.triaged_out

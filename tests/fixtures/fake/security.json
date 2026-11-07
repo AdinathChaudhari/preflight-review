@@ -1,19 +1,63 @@
 {
   "finder:correctness": {
     "findings": [],
-    "files_read_outside_packet": []
+    "files_read_outside_packet": [],
+    "coverage": [
+      {
+        "file": "app/api.py",
+        "symbol_or_hunk": "changed hunks",
+        "inputs_considered": "the diff and the code it calls",
+        "result": "checked"
+      }
+    ]
   },
   "finder:contracts_tests": {
     "findings": [],
-    "files_read_outside_packet": []
+    "files_read_outside_packet": [],
+    "coverage": [
+      {
+        "file": "app/api.py",
+        "symbol_or_hunk": "changed hunks",
+        "inputs_considered": "the diff and the code it calls",
+        "result": "checked"
+      }
+    ]
   },
   "finder:data_concurrency": {
     "findings": [],
-    "files_read_outside_packet": []
+    "files_read_outside_packet": [],
+    "coverage": [
+      {
+        "file": "app/api.py",
+        "symbol_or_hunk": "changed hunks",
+        "inputs_considered": "the diff and the code it calls",
+        "result": "checked"
+      }
+    ]
   },
   "finder:rules_compliance": {
     "findings": [],
-    "files_read_outside_packet": []
+    "files_read_outside_packet": [],
+    "coverage": [
+      {
+        "file": "app/api.py",
+        "symbol_or_hunk": "changed hunks",
+        "inputs_considered": "the diff and the code it calls",
+        "result": "checked"
+      }
+    ]
+  },
+  "sweep": {
+    "findings": [],
+    "files_read_outside_packet": [],
+    "coverage": [
+      {
+        "file": "app/api.py",
+        "symbol_or_hunk": "changed hunks",
+        "inputs_considered": "the diff and the code it calls",
+        "result": "checked"
+      }
+    ]
   },
   "security": {
     "findings": [

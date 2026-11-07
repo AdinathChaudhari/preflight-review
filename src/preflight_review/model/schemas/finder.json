@@ -130,6 +130,11 @@
               "string",
               "null"
             ]
+          },
+          "finder_confidence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
           }
         },
         "required": [
@@ -155,11 +160,40 @@
       "items": {
         "type": "string"
       }
+    },
+    "coverage": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "symbol_or_hunk": {
+            "type": "string"
+          },
+          "inputs_considered": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "symbol_or_hunk",
+          "inputs_considered",
+          "result"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
     "findings",
-    "files_read_outside_packet"
+    "files_read_outside_packet",
+    "coverage"
   ],
   "additionalProperties": false
 }

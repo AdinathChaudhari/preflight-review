@@ -44,6 +44,8 @@ def _review(args: argparse.Namespace) -> int:
         budget_usd=args.budget_usd,
         walkthrough=False if args.no_walkthrough else None,
         json_stdout=args.json,
+        yes=args.yes,
+        resume=args.resume,
     )
     run, paths = run_review(opts)
     print(summary_line(run, paths), file=sys.stderr if args.json else sys.stdout)
@@ -57,7 +59,7 @@ def _review(args: argparse.Namespace) -> int:
             "round": run.round,
             "reused": run.reused,
         }))
-    if run.outcome != "complete":
+    if run.outcome == "incomplete":
         for reason in run.incomplete_reasons:
             print(f"preflight: incomplete: {reason}", file=sys.stderr)
     return 0 if run.outcome == "complete" else 1
@@ -156,9 +158,14 @@ def _learn(args: argparse.Namespace) -> int:
 
 
 def _doctor(args: argparse.Namespace) -> int:
-    from preflight_review.doctor import doctor_ok, format_checks, run_doctor
+    from preflight_review.doctor import (
+        doctor_ok,
+        format_checks,
+        probe_model,
+        run_doctor,
+    )
 
-    checks = run_doctor(Path.cwd())
+    checks = run_doctor(Path.cwd(), model_probe_fn=probe_model)
     print(format_checks(checks))
     return 0 if doctor_ok(checks) else 1
 
@@ -211,8 +218,13 @@ def _eval(args: argparse.Namespace) -> int:
     print(
         f"eval {args.eval_set}: precision={fmt(res['precision'])} "
         f"ep_recall={fmt(res['ep_recall'])} snr={fmt(res['snr'])} "
-        f"f1={fmt(res['f1'])} \u2192 {res['path']}"
+        f"f1={fmt(res['f1'])} precision_reported={fmt(res['precision_reported'])} "
+        f"unverified={res['n_unverified']} \u2192 {res['path']}"
     )
+    if res.get("failed"):
+        names = ", ".join(c["name"] for c in res["failed"])
+        print(f"eval: {len(res['failed'])} case(s) FAILED to run and were not scored: {names}")
+        return 1
     return 0
 
 
@@ -242,13 +254,24 @@ def build_parser() -> argparse.ArgumentParser:
     g = p.add_mutually_exclusive_group()
     g.add_argument("--full", action="store_true", help="review the whole branch diff")
     g.add_argument("--incremental", action="store_true", help="review only new commits")
-    p.add_argument("--mode", choices=["quick", "standard", "deep"])
+    p.add_argument(
+        "--mode", choices=["auto", "quick", "standard", "deep"],
+        help="review depth (default from config: auto = deep on crucial paths, else standard)",
+    )
     p.add_argument("--json", action="store_true", help="print machine-readable output")
     p.add_argument("--show-pre-existing", action="store_true")
     p.add_argument("--backend", choices=["cli", "fake"])
     p.add_argument("--committed-only", action="store_true", help="ignore uncommitted changes")
     p.add_argument("--no-walkthrough", action="store_true")
     p.add_argument("--budget-usd", type=float)
+    p.add_argument(
+        "--yes", action="store_true",
+        help="run even when the estimate is above confirm_above_usd (no question asked)",
+    )
+    p.add_argument(
+        "--resume", action="store_true",
+        help="continue a run paused by the Claude usage limit, reusing its finished calls",
+    )
     p.set_defaults(func=_review)
 
     p = add("init", "Create .preflight/config.yaml in this repo.")
@@ -256,10 +279,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--with-ast-rules",
         action="store_true",
-        help="also install the bundled ast-grep rules (no shell=True, no unsafe yaml.load)",
+        help="also install the bundled ast-grep rules",
     )
     p.set_defaults(func=_init)
-    p = add("doctor", "Check the environment (git, claude, tools).")
+    p = add("doctor", "Check the environment (git, claude, adjudicator model, tools).")
     p.set_defaults(func=_doctor)
     p = add("install-hook", "Install the pre-push git hook.")
     p.add_argument("--force", action="store_true", help="overwrite a chained hook backup")
@@ -286,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_learn)
 
     p = add("import-coderabbit", "Import CodeRabbit history for evals.")
-    p.add_argument("--repo", help="GitHub repo as OWNER/NAME, e.g. example-org/example-repo")
+    p.add_argument("--repo", help="GitHub repo as OWNER/NAME, e.g. octo-org/x")
     p.add_argument("--out", default=".preflight", help="output directory (default .preflight)")
     p.add_argument("--from-fixture", help="read pulls.json/pull_comments.json from DIR or a file inside it, instead of gh")
     p.set_defaults(func=_import_coderabbit)

@@ -21,7 +21,8 @@ class ModelRequest:
     cwd: Path
     tools: list[str] = field(default_factory=lambda: ["Read", "Grep", "Glob"])
     max_turns: int = 6
-    max_budget_usd: float = 0.5
+    max_budget_usd: float | None = None  # None: no --max-budget-usd
+    effort: str | None = None  # None: no --effort (model default)
 
 
 @dataclass

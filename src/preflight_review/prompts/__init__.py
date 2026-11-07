@@ -6,10 +6,24 @@ from importlib import resources
 
 from preflight_review.errors import SchemaError
 
-PROMPT_NAMES = ("system", "lens_correctness", "lens_contracts_tests", "verifier",
-                "security", "verifier_security", "lens_data_concurrency",
-                "lens_rules_compliance", "triage", "walkthrough",
-                "rerank", "judge", "propose")
+CORE_PROMPT_NAMES = ("system", "lens_correctness", "lens_contracts_tests", "verifier",
+                     "security", "verifier_security", "lens_data_concurrency",
+                     "lens_rules_compliance", "triage", "walkthrough",
+                     "rerank", "judge", "propose", "adjudicator", "sweep", "docs_review",
+                     "lens_deploy_ci")
+
+
+def _extension_prompt_names() -> tuple[str, ...]:
+    # Imported here: extension modules may import from preflight_review at load time.
+    from preflight_review import extensions
+
+    return extensions.prompt_names()
+
+
+# Core prompts plus those an extension module ships (see preflight_review.extensions).
+PROMPT_NAMES = CORE_PROMPT_NAMES + tuple(
+    n for n in _extension_prompt_names() if n not in CORE_PROMPT_NAMES
+)
 
 _SLOT_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 

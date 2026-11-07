@@ -1,0 +1,3 @@
+[
+  {"line_start": 7, "line_end": 8, "category": "contracts", "severity": "minor", "description": "The test never creates order o-1, so cancel_order returns early and store.get returns None; the assertion passes whether or not cancel_order works."}
+]

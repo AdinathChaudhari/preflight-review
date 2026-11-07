@@ -66,18 +66,24 @@ def test_quiet_drops_unverified():
 
 def test_nit_caps():
     nits = [mk(f"n{i}", sev=Severity.trivial, file="a.py", s=i) for i in range(3)]
-    r = pol(nits, profile="chill")
+    r = pol(nits, profile="chill")  # default caps are null: nothing capped
+    assert len(r.report) == 3 and r.nit_capped == []
+    r = pol(nits, profile="chill", nitpicks=NitpicksConfig(per_file=2))
     assert len(r.report) == 2 and len(r.nit_capped) == 1
     many = [mk(f"m{i}", sev=Severity.trivial, file=f"f{i}.py") for i in range(7)]
-    r = apply_policy(many, Config(nitpicks=NitpicksConfig(per_file=2, per_run=5)), BranchState(), 1)
+    cfg = Config(profile="chill", nitpicks=NitpicksConfig(per_file=2, per_run=5))
+    r = apply_policy(many, cfg, BranchState(), 1)
     assert len(r.report) == 5 and len(r.nit_capped) == 2
+    r = pol(many, nitpicks=NitpicksConfig(per_file=2, per_run=5))  # caps apply only under chill
+    assert len(r.report) == 7 and r.nit_capped == []
 
 
-def test_round2_drops_nitpicks():
+def test_round2_keeps_nitpicks():
     n = mk("n", sev=Severity.minor, lane=Lane.nitpick)
-    r = pol([n, mk("m")], round=2, profile="assertive")
-    assert [f.title for f in r.report] == ["m"]
-    assert r.dropped == [(n, "nitpicks suppressed after round 1")]
+    u = mk("u", sev=Severity.minor, lane=Lane.nitpick, verdict=Verdict.UNKNOWN)
+    r = pol([n, u, mk("m")], round=2, profile="assertive")
+    assert [f.title for f in r.report] == ["m", "n"]
+    assert [f.title for f in r.unverified] == ["u"] and r.dropped == []
 
 
 def test_round_message():

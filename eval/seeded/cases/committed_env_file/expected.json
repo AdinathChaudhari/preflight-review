@@ -1,0 +1,3 @@
+[
+  {"line_start": 1, "line_end": 2, "category": "security", "severity": "critical", "description": "The branch commits .env.local with the service URL and API key; the file reaches every clone and stays in git history."}
+]

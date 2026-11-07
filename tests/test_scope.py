@@ -5,6 +5,7 @@ import pytest
 from preflight_review.errors import ScopeError
 from preflight_review.scope import (
     changed_line_ranges,
+    docs_only_skip,
     glob_to_regex,
     is_in_diff,
     matches_path_filters,
@@ -226,3 +227,30 @@ def test_only_docs_or_lockfiles(tmp_path):
     assert only_docs_or_lockfiles(resolve_scope(repo, "main")) is True
     commit(repo, {"code.py": "c\n"}, "c")
     assert only_docs_or_lockfiles(resolve_scope(repo, "main")) is False
+
+
+def test_prompt_and_agent_files_are_not_docs(tmp_path):
+    for i, path in enumerate(
+        ["prompts/agent/system.md", "CLAUDE.md", "AGENTS.md", "skills/x/SKILL.md",
+         ".claude/commands/ship.md", "templates/prompts/a.txt"]
+    ):
+        (tmp_path / str(i)).mkdir()
+        repo = _feature(tmp_path / str(i))
+        commit(repo, {path: "Always answer in JSON.\n"}, "p")
+        s = resolve_scope(repo, "main")
+        assert only_docs_or_lockfiles(s) is False, path
+        assert docs_only_skip(s, "off") is False, path
+
+
+def test_docs_only_skip_follows_docs_review(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    repo = _feature(tmp_path / "a")
+    commit(repo, {"PLAN.md": "8 backups\n", "PROGRESS.md": "7 backups\n"}, "d")
+    s = resolve_scope(repo, "main")
+    assert only_docs_or_lockfiles(s) is True
+    assert docs_only_skip(s, "auto") is False and docs_only_skip(s, "on") is False
+    assert docs_only_skip(s, "off") is True
+    lock = _feature(tmp_path / "b")
+    commit(lock, {"uv.lock": "l\n", "LICENSE-MIT": "l\n", "requirements.txt": "x==1\n"}, "l")
+    assert docs_only_skip(resolve_scope(lock, "main"), "auto") is True  # no prose to review

@@ -1,0 +1,3 @@
+[
+  {"line_start": 7, "line_end": 9, "category": "contracts", "severity": "minor", "description": "importlib.reload re-runs load_dotenv('.env.local'), which sets API_URL again after monkeypatch.delenv, so the test fails on any machine with that file."}
+]

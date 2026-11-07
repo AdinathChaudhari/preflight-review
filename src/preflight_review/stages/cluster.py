@@ -7,10 +7,23 @@ import re
 from preflight_review import findings as findings_mod
 from preflight_review.config import Config
 from preflight_review.context.learnings import Learning
-from preflight_review.findings import Category, Evidence, Finding, Lane, severity_rank
+from preflight_review.context.risk import is_prose_doc
+from preflight_review.findings import (
+    Category,
+    Evidence,
+    Finding,
+    Lane,
+    Severity,
+    severity_rank,
+)
 from preflight_review.scope import Scope, glob_to_regex, is_in_diff
+from preflight_review.stages.finders import lens_matches, source_lens
 
-DOC_SUFFIXES = (".md", ".rst", ".txt")
+# docs_review: auto -- when docs are at least this share of changed lines, low-signal doc
+# findings are dropped (see _low_signal_doc).
+DOCS_HEAVY_SHARE = 0.5
+_DOC_KEEP_CATEGORIES = {Category.correctness, Category.contracts, Category.data_integrity}
+_INTERNAL_CATEGORIES = {Category.correctness, Category.contracts}
 
 COARSE: dict[Category, str] = {
     Category.security: "security",
@@ -27,6 +40,9 @@ COARSE: dict[Category, str] = {
 }
 
 _WIDEN = 2
+# Never merged into another finding: a merge would make an LLM finding the primary, and a
+# REFUTED verdict on it would then drop a finding that must always be reported.
+UNMERGED_SOURCES = frozenset({"secret-files"})
 _WORD_RE = re.compile(r"[a-z0-9_]+")
 _STOP = {"flag", "report"}
 _PREFIXES = ("do not flag", "do not report")
@@ -57,19 +73,66 @@ def _suppressing_learning(f: Finding, learnings: list[Learning]) -> Learning | N
 
 
 def _is_doc(path: str) -> bool:
-    return path.lower().endswith(DOC_SUFFIXES)
+    """A prose doc: a doc suffix and risk tier "docs".
+
+    Prompt files and agent-instruction files (SKILL.md, CLAUDE.md, AGENTS.md, .claude/**)
+    have risk tier "source": they change behaviour, so findings on them are kept like code.
+    """
+    return is_prose_doc(path)
 
 
-def _cites_changed_code(f: Finding, scope: Scope) -> bool:
-    """True when any evidence entry points at a non-doc file changed in this diff.
+def _cites_changed_file(f: Finding, scope: Scope, docs_review: str = "auto") -> bool:
+    """True when the doc finding is anchored in more than its own single quote.
 
-    A finding on a doc that quotes changed code is a doc-code consistency claim
-    (e.g. a ledger describing a guard the branch removed), not a prose nitpick.
-    File-level on purpose: when code is added then removed on the branch, the
-    cited line is unchanged context, but its file is still in the diff.
+    Kept: evidence in any *other* file changed in this diff, code or doc (a doc-code
+    drift claim, or a doc-vs-doc contradiction such as two status files disagreeing),
+    or at least 2 quotes from the doc itself in category correctness or contracts (an
+    internal contradiction). File-level on purpose: when code is added then removed on
+    the branch, the cited line is unchanged context, but its file is still in the diff.
+
+    Under docs_review auto|on, a finding anchored on a changed line of the doc may also
+    cite an unchanged file that exists in the repository: new doc text that contradicts
+    unchanged code or config, or names a command or path that is not there, is what the
+    doc-consistency review asks for. Drift on an unchanged doc line stays dropped.
     """
     changed = {fc.path for fc in scope.files}
-    return any(e.file in changed and not _is_doc(e.file) for e in f.evidence)
+    if any(e.file in changed and e.file != f.file for e in f.evidence):
+        return True
+    if (
+        docs_review != "off"
+        and is_in_diff(scope, f.file, f.start_line)
+        and any(e.file != f.file and (scope.repo_root / e.file).is_file() for e in f.evidence)
+    ):
+        return True
+    same_doc = sum(1 for e in f.evidence if e.file == f.file)
+    return same_doc >= 2 and f.category in _INTERNAL_CATEGORIES
+
+
+def _gated_lens_doc(f: Finding) -> bool:
+    """A finding from a path-gated lens on a file inside its gate (a deploy runbook for
+    deploy_ci): reviewing those docs is the lens's job, so the docs drop does not apply."""
+    spec = source_lens(f.source)
+    return spec is not None and bool(spec.paths) and lens_matches(spec, f.file)
+
+
+def docs_share(scope: Scope) -> float:
+    """Share of changed lines (added + deleted) that are in prose docs."""
+    total = sum(fc.added_lines + fc.deleted_lines for fc in scope.files)
+    if not total:
+        return 0.0
+    docs = sum(fc.added_lines + fc.deleted_lines for fc in scope.files if _is_doc(fc.path))
+    return docs / total
+
+
+def _low_signal_doc(f: Finding) -> bool:
+    """Doc findings kept in a docs-heavy diff: correctness, contracts or data_integrity at
+    minor or above, or any category at major or above. Never style nits."""
+    if f.lane == Lane.nitpick:
+        return True
+    rank = severity_rank(f.severity)
+    if rank >= severity_rank(Severity.major):
+        return False
+    return not (f.category in _DOC_KEEP_CATEGORIES and rank >= severity_rank(Severity.minor))
 
 
 def _parse_caused_by(value: str) -> tuple[str, int] | None:
@@ -90,14 +153,23 @@ def prefilter(
     kept: list[Finding] = []
     suppressed: list[tuple[Finding, str]] = []
     dropped: list[tuple[Finding, str]] = []
+    docs_heavy = config.docs_review == "auto" and docs_share(scope) >= DOCS_HEAVY_SHARE
     for f in findings:
+        # The docs drop targets model findings: a deterministic tool hit (a committed
+        # `.env.txt`, a gitleaks match in README.md, an osv advisory on requirements.txt)
+        # is about the file itself, not doc wording.
         if (
-            _is_doc(f.file)
+            f.source.startswith("llm")
+            and _is_doc(f.file)
             and not any(r.match(f.file) for r in instr)
-            and not _cites_changed_code(f, scope)
+            and not _gated_lens_doc(f)
         ):
-            dropped.append((f, "docs file"))
-            continue
+            if not _cites_changed_file(f, scope, config.docs_review):
+                dropped.append((f, "docs file"))
+                continue
+            if docs_heavy and _low_signal_doc(f):
+                dropped.append((f, "docs file: low-signal finding in a docs-heavy diff"))
+                continue
         learning = _suppressing_learning(f, learnings)
         if learning is not None:
             f.suppressed_by = learning.id if learning.id.startswith("L") else f"L{learning.id}"
@@ -133,6 +205,8 @@ def cluster(findings: list[Finding]) -> list[Finding]:
                 a.file == b.file
                 and COARSE[a.category] == COARSE[b.category]
                 and _overlap(a, b)
+                and a.source not in UNMERGED_SOURCES
+                and b.source not in UNMERGED_SOURCES
             ):
                 parent[_find(parent, j)] = _find(parent, i)
     groups: dict[int, list[int]] = {}

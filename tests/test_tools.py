@@ -4,15 +4,24 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from preflight_review.config import Config
 from preflight_review.errors import ToolError
-from preflight_review.findings import Category, Lane, Severity, Verdict, to_dict
+from preflight_review.findings import (
+    Category,
+    Finding,
+    Lane,
+    Severity,
+    Verdict,
+    to_dict,
+)
 from preflight_review.scope import resolve_scope
 from preflight_review.tools import (
+    degraded_tools,
     osv_should_run,
     parse_astgrep,
     parse_gitleaks,
@@ -24,6 +33,8 @@ from preflight_review.tools import (
     run_ruff,
     run_tools,
 )
+from preflight_review.tools.gitleaks import config_args
+from preflight_review.tools.secret_files import classify, run_secret_files
 from tests.conftest import branch, commit, make_repo
 
 FIX = Path(__file__).parent / "fixtures" / "tools"
@@ -51,7 +62,7 @@ def test_parse_ruff_fields():
     by = {f.rule_id: f for f in fs}
     assert by["S608"].file == "app/x.py"
     assert by["S608"].start_line == 3 and by["S608"].end_line == 3
-    assert by["S608"].severity == Severity.major and by["S608"].category == Category.security
+    assert by["S608"].severity == Severity.minor and by["S608"].category == Category.security
     assert by["B006"].severity == Severity.minor and by["B006"].category == Category.correctness
     assert by["B006"].suggested_fix.startswith("Replace with")
     assert by["F401"].severity == Severity.trivial
@@ -149,7 +160,14 @@ def test_missing_binaries_degrade(tmp_path, monkeypatch):
     findings, statuses = run_tools(scope, Config())
     assert findings == []
     by = {s.name: s for s in statuses}
-    assert set(by) == {"ruff", "gitleaks", "ast-grep", "osv-scanner"}
+    assert set(by) == {
+        "ruff", "gitleaks", "ast-grep", "osv-scanner", "secret-files", "zizmor", "actionlint",
+        "shellcheck",
+    }
+    assert by["secret-files"].ran is True and by["secret-files"].degraded is False
+    # No workflow or shell file changed: a missing CI tool is not degraded.
+    assert not by["zizmor"].degraded and by["zizmor"].installed is False
+    assert by["actionlint"].note == "disabled in config" and not by["shellcheck"].degraded
     for name, hint in [
         ("ruff", "uv tool install ruff"),
         ("gitleaks", "brew install gitleaks"),
@@ -158,6 +176,10 @@ def test_missing_binaries_degrade(tmp_path, monkeypatch):
     ]:
         assert by[name].installed is False and by[name].ran is False
         assert hint in by[name].note
+        assert by[name].degraded is True  # enabled and relevant (a.py and uv.lock changed)
+    assert degraded_tools(statuses) == [
+        f"{n}: {by[n].note}" for n in ("ruff", "gitleaks", "ast-grep", "osv-scanner")
+    ]
 
 
 def test_ruff_no_python_files(tmp_path, monkeypatch):
@@ -222,7 +244,9 @@ def test_failing_binaries_do_not_abort_tool_layer(tmp_path, monkeypatch):
     assert st.note.startswith("failed")
     findings, statuses = run_tools(scope, Config())
     assert findings == []
-    assert {s.name for s in statuses} == {"ruff", "gitleaks", "ast-grep", "osv-scanner"}
+    by = {s.name: s for s in statuses}
+    assert {"ruff", "gitleaks", "ast-grep", "osv-scanner", "secret-files"} <= set(by)
+    assert by["ruff"].degraded and by["osv-scanner"].degraded
 
 
 # ---------------------------------------------------------------------- lanes
@@ -252,6 +276,23 @@ def test_lane_assignment(tmp_path, monkeypatch):
     assert by_line[2].lane == Lane.pre_existing
 
 
+def test_ruff_test_noise_dropped_only_on_test_paths():
+    from preflight_review.tools.ruff import drop_test_noise
+
+    def f(path, code):
+        return Finding(file=path, start_line=1, end_line=1, title=code, claim="c",
+                       severity=Severity.major, category=Category.security, source="ruff",
+                       rule_id=code)
+
+    keep = [f("app/x.py", "S101"), f("tests/test_x.py", "S603"), f("app/auth.py", "S105")]
+    drop = [f("tests/test_x.py", "S101"), f("pkg/test_y.py", "S105"), f("conftest.py", "S311"),
+            f("a/tests/helpers.py", "S108"), f("svc/z_test.py", "S106")]
+    assert drop_test_noise(keep + drop, Config()) == keep
+    cfg = Config()
+    cfg.tools.ruff.test_ignore = []
+    assert len(drop_test_noise(keep + drop, cfg)) == 8
+
+
 # ------------------------------------------------------------- live gitleaks
 
 
@@ -271,3 +312,207 @@ def test_live_gitleaks_finds_one_secret(tmp_path):
     assert f.verdict == Verdict.SKIPPED and f.file == "config.py"
     assert token not in repr(to_dict(f))
     assert "a1B2c3D4e5F6" not in repr(to_dict(f))
+
+
+@pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks not installed")
+def test_live_gitleaks_repo_config_allowlists_redacted_fixture_only(tmp_path):
+    # Built at runtime so this file holds no PEM header gitleaks would match.
+    header = "-----BEGIN RSA " + "PRIVATE KEY-----"
+    fixture = f'key = "{header}\\nREDACTED\\n"\nother = "{header}\\nREDACTED\\n"\n'
+    body = "\n".join(
+        "MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn" + c * 33 for c in ("ygWyF8Pb", "aNDu6Op8", "kNGlHRY0")
+    )
+    real = f'KEY = """{header}\n{body}\n-----END RSA {"PRIVATE KEY"}-----"""\n'
+    config = (Path(__file__).parents[1] / ".gitleaks.toml").read_text()
+    repo, scope = _scope(
+        tmp_path,
+        {"app.py": "x = 1\n", ".gitleaks.toml": config},
+        {"tests/test_fixture.py": fixture, "tests/test_real.py": real},
+    )
+    assert config_args(repo) == ["--config", str(repo / ".gitleaks.toml")]
+    findings, status = run_gitleaks(scope, Config())
+    assert status.ran
+    assert {f.file for f in findings} == {"tests/test_real.py"}, findings
+
+
+def test_gitleaks_config_args_absent(tmp_path):
+    assert config_args(tmp_path) == []
+
+
+# ------------------------------------------------------------- degraded banner
+
+
+def test_missing_tool_without_work_is_not_degraded(tmp_path, monkeypatch):
+    _, scope = _scope(tmp_path, {"README.md": "a\n"}, {"README.md": "a\nb\n"})
+    monkeypatch.setattr("preflight_review.tools.base.which", lambda name: None)
+    _, statuses = run_tools(scope, Config())
+    by = {s.name: s for s in statuses}
+    assert by["ruff"].installed is False and by["ruff"].degraded is False  # no python changed
+    assert by["ast-grep"].degraded is False  # no rules defined
+    assert by["osv-scanner"].degraded is False  # no manifest changed
+    assert by["gitleaks"].degraded is True  # enabled and always relevant
+    cfg = Config()
+    cfg.tools.gitleaks = False
+    _, statuses = run_tools(scope, cfg)
+    assert degraded_tools(statuses) == []  # disabled tools never degrade
+
+
+def test_unparseable_tool_output_degrades_without_aborting(tmp_path, monkeypatch):
+    _, scope = _scope(tmp_path, {"a.py": "x = 1\n"}, {"a.py": "x = 2\n"})
+    monkeypatch.setattr(
+        "preflight_review.tools.base.which", lambda n: None if n == "gitleaks" else "/bin/fake"
+    )
+    monkeypatch.setattr("preflight_review.tools.ruff.tool_version", lambda *a, **k: "0")
+    monkeypatch.setattr("preflight_review.tools.ruff.run", lambda *a, **k: (0, "not json", ""))
+    _findings, statuses = run_tools(scope, Config())
+    ruff = next(s for s in statuses if s.name == "ruff")
+    assert ruff.degraded is True and ruff.ran is False
+    assert "malformed JSON" in ruff.note
+    assert any(d.startswith("ruff: failed: ") for d in degraded_tools(statuses))
+
+
+# --------------------------------------------------------------- secret files
+
+
+@pytest.mark.parametrize(
+    "path,kind",
+    [
+        (".env", "env file"),
+        ("services/api/.env.local", "env file"),
+        (".env.production", "env file"),
+        (".env.example", None),
+        ("deploy/.env.sample", None),
+        (".env.local.example", None),
+        ("config/.env.production.sample", None),
+        ("deploy/.env.staging.template", None),
+        (".env.example.bak", "env file"),
+        ("certs/server.pem", "private key"),
+        ("keys/client.p12", "private key or certificate bundle"),
+        ("home/.ssh/id_rsa", "private SSH key"),
+        ("home/.ssh/id_ed25519", "private SSH key"),
+        ("home/.ssh/id_rsa.pub", None),
+        ("config/credentials.json", "credentials file"),
+        ("infra/my-service-account.json", "service-account key file"),
+        ("app/environment.py", None),
+        ("docs/env.md", None),
+    ],
+)
+def test_secret_file_classify(path, kind):
+    assert classify(path) == kind
+
+
+def test_secret_file_service_account_by_content(tmp_path):
+    (tmp_path / "gcp.json").write_text(json.dumps({"type": "service_account", "project_id": "p"}))
+    (tmp_path / "data.json").write_text(json.dumps({"type": "user"}))
+    assert classify("gcp.json", tmp_path) == "service-account key file"
+    assert classify("data.json", tmp_path) is None
+
+
+def test_secret_file_pem_flagged_only_with_private_key(tmp_path):
+    (tmp_path / "ca.pem").write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    (tmp_path / "key.pem").write_text("-----BEGIN RSA PRIVATE KEY-----\nREDACTED\n")
+    (tmp_path / "bundle.pem").write_text(
+        "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+        "-----BEGIN PRIVATE KEY-----\nREDACTED\n"
+    )
+    assert classify("ca.pem", tmp_path) is None
+    assert classify("key.pem", tmp_path) == "private key"
+    assert classify("bundle.pem", tmp_path) == "private key"
+    assert classify("missing.pem", tmp_path) == "private key"  # unreadable: name decides
+
+
+def test_secret_file_key_ext_pgp_and_late_key(tmp_path):
+    (tmp_path / "server.key").write_text("-----BEGIN RSA PRIVATE KEY-----\nREDACTED\n")
+    (tmp_path / "pub.key").write_text("-----BEGIN PUBLIC KEY-----\nMIIB\n")
+    (tmp_path / "gpg.pem").write_text("-----BEGIN PGP PRIVATE KEY BLOCK-----\nREDACTED\n")
+    chain = "-----BEGIN CERTIFICATE-----\n" + "A" * 64 + "\n-----END CERTIFICATE-----\n"
+    (tmp_path / "late.pem").write_text(chain * 2000 + "-----BEGIN PRIVATE KEY-----\nX\n")
+    assert (tmp_path / "late.pem").stat().st_size > 64_000
+    assert classify("deploy/tls/server.key") == "private key"
+    assert classify("server.key", tmp_path) == "private key"
+    assert classify("pub.key", tmp_path) is None
+    assert classify("gpg.pem", tmp_path) == "private key"
+    assert classify("late.pem", tmp_path) == "private key"
+
+
+def test_secret_file_service_account_template_and_content(tmp_path):
+    sa = json.dumps({"type": "service_account", "private_key": "REDACTED"})
+    (tmp_path / "service-account.json").write_text(sa)
+    (tmp_path / "service_account_schema.json").write_text(json.dumps({"type": "object"}))
+    assert classify("service-account.example.json") is None
+    assert classify("infra/service_account.template.json") is None
+    assert classify("service-account.json", tmp_path) == "service-account key file"
+    assert classify("service_account_schema.json", tmp_path) is None
+    assert classify("service-account-missing.json", tmp_path) == "service-account key file"
+
+
+def test_secret_file_committed_range_reads_head_not_worktree(tmp_path):
+    repo = make_repo(tmp_path, {"a.py": "x\n"})
+    branch(repo, "feature")
+    sa = json.dumps({"type": "service_account", "private_key": "REDACTED"})
+    commit(repo, {"gcp.json": sa, "vendor/gcp2.json": sa}, "key")
+    (repo / "gcp.json").unlink()  # deleted locally, still committed
+    (repo / "vendor/gcp2.json").unlink()
+    scope = resolve_scope(repo, "main", include_worktree=False, path_filters=["!vendor/**"])
+    assert "vendor/gcp2.json" in scope.filtered_out
+    findings, _ = run_secret_files(scope, Config())
+    assert sorted(f.file for f in findings) == ["gcp.json", "vendor/gcp2.json"]
+
+
+def test_secret_files_always_reported_inline_and_skip_verifier(tmp_path, monkeypatch):
+    env_base = "".join(f"K{i}=v{i}\n" for i in range(1, 8))
+    _, scope = _scope(
+        tmp_path,
+        {"app.py": "x = 1\n", "config/.env.staging": env_base, "old/.env": "A=1\n"},
+        {
+            ".env.local": "API_URL=http://localhost\nAPI_KEY=dummy\n",
+            ".env.example": "API_KEY=\n",
+            "certs/server.pem": "-----BEGIN PRIVATE KEY-----\nREDACTED\n",
+            "config/.env.staging": env_base + "K8=v8\n",  # line 1 is not in the diff
+        },
+    )
+    subprocess.run(["git", "rm", "-q", "old/.env"], cwd=scope.repo_root, check=True)
+    subprocess.run(["git", "commit", "-qm", "drop env"], cwd=scope.repo_root, check=True)
+    scope = resolve_scope(scope.repo_root, "main")
+    monkeypatch.setattr("preflight_review.tools.base.which", lambda name: None)
+    findings, statuses = run_tools(scope, Config())
+    mine = sorted((f for f in findings if f.source == "secret-files"), key=lambda f: f.file)
+    assert [f.file for f in mine] == [".env.local", "certs/server.pem", "config/.env.staging"]
+    for f in mine:
+        assert f.lane == Lane.inline and f.verdict == Verdict.SKIPPED
+        assert f.severity == Severity.critical and f.category == Category.secrets
+        assert f.evidence[0].quote.startswith("REDACTED")
+    st = next(s for s in statuses if s.name == "secret-files")
+    assert st.ran is True and st.finding_count == 3 and st.degraded is False
+
+
+def test_secret_file_filtered_by_path_filters_still_flagged(tmp_path):
+    repo = make_repo(tmp_path, {"a.py": "x\n"})
+    branch(repo, "feature")
+    commit(repo, {"local/.env": "A=1\n"}, "env")
+    scope = resolve_scope(repo, "main", path_filters=["!local/**"])
+    assert "local/.env" in scope.filtered_out
+    findings, _ = run_secret_files(scope, Config())
+    assert [f.file for f in findings] == ["local/.env"]
+
+
+def test_partial_tool_is_degraded_but_not_did_not_run(tmp_path):
+    from types import SimpleNamespace
+
+    from preflight_review.pipeline import summary_line
+    from preflight_review.tools import degraded_label
+    from preflight_review.tools.base import ToolStatus
+
+    statuses = [
+        ToolStatus("osv-scanner", True, "1", True, 2, note="requirements.txt: failed", degraded=True),
+        ToolStatus("ruff", False, None, False, note="not installed", degraded=True),
+    ]
+    entries = degraded_tools(statuses)
+    assert entries == ["osv-scanner: partial: requirements.txt: failed", "ruff: not installed"]
+    assert [degraded_label(d) for d in entries] == ["osv-scanner (partial)", "ruff"]
+    run = SimpleNamespace(
+        reused=False, outcome="complete", degraded=entries,
+        policy=SimpleNamespace(report=[], unverified=[]),
+    )
+    line = summary_line(run, {"md": tmp_path / "r.md"})
+    assert line.endswith("DEGRADED: ruff did not run; osv-scanner ran partially")

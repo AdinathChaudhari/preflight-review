@@ -52,6 +52,14 @@ def render_json(run: RunResult) -> dict:
         "merge_risk": level,
         "merge_risk_detail": detail,
         "incomplete_reasons": list(run.incomplete_reasons),
+        **(
+            {"paused": {
+                "resets": run.limit_resets, "calls_done": run.calls_done,
+                "calls_total": run.calls_total, "resume_command": run.resume_command,
+            }}
+            if run.outcome == "paused" else {}
+        ),
+        "degraded": list(run.degraded),
         "scope": {
             "files": [
                 {"path": fc.path, "status": fc.status, "added": fc.added_lines, "deleted": fc.deleted_lines}

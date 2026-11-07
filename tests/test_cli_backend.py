@@ -44,6 +44,12 @@ def success_json(**over):
     return d
 
 
+def exec_error_json(cost=0.25):
+    d = max_turns_json(cost)
+    d.update(subtype="error_during_execution", errors=["API Error: overloaded"])
+    return d
+
+
 def max_turns_json(cost=0.25):
     return {
         "type": "result", "subtype": "error_max_turns", "is_error": True,
@@ -87,6 +93,29 @@ def test_build_argv_exact(tmp_path):
     ]
 
 
+def test_no_budget_or_effort_flags_by_default(tmp_path):
+    argv = CliBackend().build_argv(make_req(tmp_path))
+    assert "--max-budget-usd" not in argv and "--effort" not in argv
+
+
+def test_effort_flag_follows_max_turns(tmp_path):
+    argv = CliBackend().build_argv(make_req(tmp_path, max_turns=3, max_budget_usd=1.0, effort="high"))
+    i = argv.index("--max-turns")
+    assert argv[i:i + 6] == ["--max-turns", "3", "--max-budget-usd", "1.00", "--effort", "high"]
+    argv = CliBackend().build_argv(make_req(tmp_path, max_turns=3, effort="max"))
+    i = argv.index("--max-turns")
+    assert argv[i:i + 4] == ["--max-turns", "3", "--effort", "max"]
+
+
+def test_timeout_default_and_override(tmp_path):
+    runner = Runner(cp(success_json()))
+    CliBackend(runner=runner).run(make_req(tmp_path))
+    assert runner.calls[0][1]["timeout"] == 3600
+    runner = Runner(cp(success_json()))
+    CliBackend(runner=runner, timeout_s=120).run(make_req(tmp_path))
+    assert runner.calls[0][1]["timeout"] == 120
+
+
 def test_tools_last_and_forbidden_flags(tmp_path):
     argv = CliBackend().build_argv(make_req(tmp_path))
     assert argv[-2:] == ["--tools", "Read,Grep,Glob"]
@@ -117,12 +146,22 @@ def test_success_parsed(tmp_path):
     assert kw["env"]["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
 
 
-def test_max_turns_retries_once_and_sums_cost(tmp_path):
-    runner = Runner(cp(max_turns_json(0.25), 1), cp(max_turns_json(0.30), 1))
+def test_error_retries_once_and_sums_cost(tmp_path):
+    runner = Runner(cp(exec_error_json(0.25), 1), cp(exec_error_json(0.30), 1))
     res = CliBackend(runner=runner).run(make_req(tmp_path))
-    assert not res.ok and res.subtype == "error_max_turns"
+    assert not res.ok and res.subtype == "error_during_execution"
     assert len(runner.calls) == 2
     assert res.cost_usd == pytest.approx(0.55)
+    assert "overloaded" in res.error
+
+
+def test_max_turns_is_not_retried(tmp_path):
+    # Same turn limit on retry hits the same wall and pays twice.
+    runner = Runner(cp(max_turns_json(0.25), 1))
+    res = CliBackend(runner=runner).run(make_req(tmp_path))
+    assert not res.ok and res.subtype == "error_max_turns"
+    assert len(runner.calls) == 1
+    assert res.cost_usd == pytest.approx(0.25)
     assert "maximum number of turns" in res.error
 
 
@@ -143,16 +182,16 @@ def test_budget_exceeded_is_not_retried(tmp_path):
 
 
 def test_retry_sums_tokens_and_turns(tmp_path):
-    runner = Runner(cp(max_turns_json(0.25), 1), cp(max_turns_json(0.30), 1))
+    runner = Runner(cp(exec_error_json(0.25), 1), cp(exec_error_json(0.30), 1))
     res = CliBackend(runner=runner).run(make_req(tmp_path))
-    single = CliBackend(runner=Runner(cp(max_turns_json(0.25), 1))).run(make_req(tmp_path))
+    single = CliBackend(runner=Runner(cp(exec_error_json(0.25), 1))).run(make_req(tmp_path))
     assert res.num_turns == 2 * single.num_turns
     assert res.input_tokens == 2 * single.input_tokens
     assert res.cache_write_tokens == 2 * single.cache_write_tokens
 
 
 def test_fail_then_success(tmp_path):
-    runner = Runner(cp(max_turns_json(0.25), 1), cp(success_json(total_cost_usd=0.1)))
+    runner = Runner(cp(exec_error_json(0.25), 1), cp(success_json(total_cost_usd=0.1)))
     res = CliBackend(runner=runner).run(make_req(tmp_path))
     assert res.ok and len(runner.calls) == 2
     assert res.cost_usd == pytest.approx(0.35)
@@ -167,9 +206,9 @@ def test_log_line_before_json(tmp_path):
 def test_timeout_no_raise(tmp_path):
     exc = subprocess.TimeoutExpired(["claude"], 1)
     runner = Runner(exc, exc)
-    res = CliBackend(runner=runner).run(make_req(tmp_path))
-    assert not res.ok and res.subtype == "error_subprocess"
-    assert len(runner.calls) == 2
+    res = CliBackend(runner=runner, timeout_s=7).run(make_req(tmp_path))
+    assert not res.ok and res.subtype == "error_timeout" and res.error == "timed out after 7s"
+    assert len(runner.calls) == 1  # the same time cap would hit again: no retry
 
 
 def test_file_not_found(tmp_path):

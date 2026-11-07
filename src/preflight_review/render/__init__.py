@@ -10,6 +10,7 @@ from pathlib import Path
 
 from preflight_review.config import Config
 from preflight_review.context.packer import Packet
+from preflight_review.depth import Estimate
 from preflight_review.errors import RenderError
 from preflight_review.findings import Finding
 from preflight_review.model.backend import ModelResult
@@ -32,7 +33,7 @@ class RunResult:
     round: int
     pr_label: str
     basename: str
-    outcome: str  # 'complete' | 'incomplete'
+    outcome: str  # 'complete' | 'incomplete' | 'paused' | 'not_started'
     incomplete_reasons: list[str]
     models_used: dict[str, str]  # stage -> model
     previous_report: str | None
@@ -57,6 +58,21 @@ class RunResult:
     packet_shas: list[str] = field(default_factory=list)
     finder_dropped: list[dict] = field(default_factory=list)  # {stage, lane, batch, reason, candidate}
     risk_tiers: dict[str, str] = field(default_factory=dict)  # path -> tier
+    # "<tool>: <why>" for enabled, relevant tools that gave no usable result. The run is
+    # still complete (exit 0) but is never presented as a clean complete run.
+    degraded: list[str] = field(default_factory=list)
+    # config/CLI mode before `auto` was resolved ("" = legacy; "menu" = picked at the
+    # pre-run depth menu)
+    mode_requested: str = ""
+    crucial_paths: list[str] = field(default_factory=list)  # paths that made `auto` go deep
+    estimate: Estimate | None = None  # pre-run estimate (None when no model stage was due)
+    rerun_commands: list[str] = field(default_factory=list)  # not_started: how to proceed
+    mode_estimates: dict[str, Estimate] = field(default_factory=dict)  # depth menu: mode -> est.
+    # paused (usage limit): when it resets, calls that ran vs calls requested, how to resume
+    limit_resets: str | None = None
+    calls_done: int = 0
+    calls_total: int = 0
+    resume_command: str = ""
 
 
 from preflight_review.render.json_out import render_json, write_ndjson  # noqa: E402

@@ -22,6 +22,15 @@ RULES_MD = """\
 
 ## Always check
 <!-- Example: New API routes must have an auth check and a test. -->
+- When a commit on this branch removes or renames a function, class, field, flag or
+  guard, search the branch's changed docs (`*.md`, `*.rst`, `*.txt`, ledgers, indexes,
+  changelogs) for the old name. A doc that still describes the removed behaviour is a
+  finding on the doc, with the changed code file as evidence.
+
+## Workflow
+- After any commit that answers review findings, run
+  `preflight-review review --incremental` before pushing. A fix commit can leave prose
+  written earlier in the branch describing the old design.
 
 ## Nit policy
 <!-- Example: Ignore formatting nits; ruff handles style. -->
@@ -35,7 +44,6 @@ LEARNINGS_MD = """\
 
 PREFLIGHT_GITIGNORE = "reviews/\nstate.json\ncache/\nintent.md\nruns/\n"
 
-_PROFILES = {"quiet", "chill", "assertive"}
 
 
 @dataclass
@@ -59,11 +67,9 @@ def _coderabbit_config_text(root: Path) -> str | None:
     if not isinstance(reviews, dict):
         return None
     data = yaml.safe_load(CONFIG_YAML)
+    # reviews.profile is not imported: a CodeRabbit `chill` would override the exhaustive
+    # `assertive` default. Only path filters and path instructions carry over.
     imported = False
-    profile = reviews.get("profile")
-    if profile in _PROFILES:
-        data["profile"] = profile
-        imported = True
     filters = reviews.get("path_filters")
     if isinstance(filters, list) and filters:
         data["path_filters"] = [str(f) for f in filters]

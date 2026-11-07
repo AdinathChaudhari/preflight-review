@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from preflight_review import gitutil
+from preflight_review.config import call_cap
 from preflight_review.context.retrieval import Doc, bm25_rank, rerank_with_model
 from preflight_review.errors import ConfigError
 from preflight_review.scope import glob_to_regex
@@ -122,6 +123,9 @@ def filter_by_path(learnings: list[Learning], changed_paths: list[str]) -> list[
     return out
 
 
+RERANK_BUDGET_USD = 0.05  # per-call cap, only when a run budget is set
+
+
 def retrieve_learnings(
     learnings: list[Learning],
     changed_paths: list[str],
@@ -143,5 +147,8 @@ def retrieve_learnings(
     docs = [Doc(l.id, l.text, l.path_glob, "learning") for l in matched]
     ranked = [d for d, _ in bm25_rank(docs, query, 2 * cap)]
     if config.learnings.rerank and backend is not None:
-        ranked = rerank_with_model(ranked, query, backend, config.models.rerank, cap, cwd)
+        ranked = rerank_with_model(
+            ranked, query, backend, config.models.rerank, cap, cwd,
+            max_budget_usd=call_cap(config, RERANK_BUDGET_USD),
+        )
     return [by_id[d.id] for d in ranked[:cap]]

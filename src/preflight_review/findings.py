@@ -80,7 +80,8 @@ class Finding:
     evidence: list[Evidence] = field(default_factory=list)
     bug_class_instances: list[dict] = field(default_factory=list)
     trace: list[dict] = field(default_factory=list)
-    confidence: float | None = None
+    confidence: float | None = None  # security lane, 0-1
+    finder_confidence: int | None = None  # finder lenses, 1-5, logging only
     verdict: Verdict | None = None
     verifier_reason: str = ""
     verifier_checks: list[str] = field(default_factory=list)

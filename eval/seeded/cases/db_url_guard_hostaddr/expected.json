@@ -1,0 +1,3 @@
+[
+  {"line_start": 9, "line_end": 11, "category": "data_integrity", "severity": "critical", "description": "The guard checks only url.host; libpq connects to ?hostaddr= (or PGHOSTADDR) when set, so a URL with host=localhost and hostaddr of a remote server passes the guard and drops the remote schema."}
+]
