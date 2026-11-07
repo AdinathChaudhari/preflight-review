@@ -17,7 +17,7 @@ TESTS = ROOT / "tests"
 RULES = sorted(RULES_DIR.glob("*.yml"))
 
 
-def test_two_rules_packaged():
+def test_generic_rules_packaged():
     assert [p.stem for p in RULES] == ["no-shell-true", "no-yaml-unsafe-load"]
 
 
@@ -50,12 +50,12 @@ def test_ast_grep_rule_tests_pass(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_init_with_ast_rules_copies_exactly_three(tmp_path):
+def test_init_with_ast_rules_copies_the_bundled_rules(tmp_path):
     repo = make_repo(tmp_path, {"README.md": "hi\n"})
     res = init_repo(repo, with_ast_rules=True)
     names = sorted(p.name for p in (repo / ".preflight" / "ast-rules").iterdir())
     assert names == [p.name for p in RULES] and len(names) == 2
-    assert "bundled ast-grep rule" in res.message
+    assert "installed 2 bundled ast-grep rule(s)" in res.message
 
 
 def test_init_without_flag_copies_none(tmp_path):

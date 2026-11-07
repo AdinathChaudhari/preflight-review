@@ -33,6 +33,10 @@ class BranchState:
     diff_hash: str | None = None
     last_report: str | None = None
     findings: dict[str, FindingState] = field(default_factory=dict)
+    # A run paused by the usage limit: `review --resume` reuses its saved calls while the
+    # diff is unchanged. Round and findings state are not advanced by a paused run.
+    paused_report: str | None = None
+    paused_diff_hash: str | None = None
 
 
 @dataclass

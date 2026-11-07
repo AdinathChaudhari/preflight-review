@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from preflight_review import prompts
-from preflight_review.config import Config
+from preflight_review.config import Config, call_cap
 from preflight_review.gitutil import run_git
 from preflight_review.model import ModelRequest, ModelResult
 from preflight_review.model.schemas import load_schema
@@ -57,7 +57,7 @@ def walkthrough(
             cwd=scope.repo_root,
             tools=[],
             max_turns=WALKTHROUGH_MAX_TURNS,
-            max_budget_usd=WALKTHROUGH_BUDGET_USD,
+            max_budget_usd=call_cap(config, WALKTHROUGH_BUDGET_USD),
         )
         res = backend.run(req)
     except Exception as exc:

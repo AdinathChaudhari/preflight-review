@@ -1,48 +1,86 @@
 {
   "__per_case__": {
-    "missing_auth": {
+    "benign_refactor": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/utils/formatting.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/utils/formatting.py",
+            "line": 1,
+            "quote": "\"\"\"Order totals.\"\"\""
+          }
+        ],
+        "reason": "unused",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/utils/formatting.py:1-30"
+        ]
+      }
+    },
+    "committed_env_file": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": ".env.local",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "security": {
         "findings": [
           {
-            "file": "app/routes/orders.py",
-            "start_line": 13,
-            "end_line": 14,
+            "file": ".env.local",
+            "start_line": 1,
+            "end_line": 2,
             "caused_by": null,
             "lane": "inline",
             "category": "security",
             "severity": "critical",
             "effort": "quick_win",
-            "title": "delete_order has no authentication or role check",
-            "claim": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
-            "failure_scenario": "An unauthenticated request deletes any order row.",
-            "why_it_matters": "An unauthenticated request deletes any order row.",
-            "suggested_fix": "Restore @require_role('admin') and the current_user check.",
+            "title": "Committed .env.local holds the API key",
+            "claim": "The branch commits .env.local with API_URL and API_KEY, and settings.py loads it.",
+            "failure_scenario": "The branch commits .env.local with API_URL and API_KEY, and settings.py loads it.",
+            "why_it_matters": "The branch commits .env.local with API_URL and API_KEY, and settings.py loads it.",
+            "suggested_fix": "See: Committed .env.local holds the API key",
             "evidence": [
               {
-                "file": "app/routes/orders.py",
-                "line": 14,
-                "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
+                "file": ".env.local",
+                "line": 2,
+                "quote": "API_KEY=eval-placeholder-not-a-real-key"
               }
             ],
             "bug_class_instances": [],
             "rule_quote": null,
             "trace": [
               {
-                "file": "app/routes/orders.py",
-                "line": 13,
-                "note": "untrusted input reaches this line"
+                "file": ".env.local",
+                "line": 2,
+                "note": "API key committed to the repository"
               },
               {
-                "file": "app/routes/orders.py",
-                "line": 14,
-                "note": "the unsafe operation happens here"
+                "file": "app/settings.py",
+                "line": 6,
+                "note": "load_dotenv('.env.local') reads it at import"
               }
             ],
-            "exploit_scenario": "An unauthenticated request deletes any order row.",
+            "exploit_scenario": "The branch commits .env.local with API_URL and API_KEY, and settings.py loads it.",
             "confidence": 0.92
           }
         ],
@@ -52,16 +90,16 @@
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/routes/orders.py",
-            "line": 14,
-            "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
+            "file": ".env.local",
+            "line": 2,
+            "quote": "API_KEY=eval-placeholder-not-a-real-key"
           }
         ],
-        "reason": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
+        "reason": "Committed in the diff, so not 'otherwise secured' on disk; override 1 applies.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/routes/orders.py:1-30"
+          "read .env.local"
         ],
         "confidence_10": 9
       },
@@ -69,23 +107,371 @@
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/routes/orders.py",
-            "line": 14,
-            "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
+            "file": ".env.local",
+            "line": 2,
+            "quote": "API_KEY=eval-placeholder-not-a-real-key"
           }
         ],
-        "reason": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
+        "reason": "Committed in the diff, so not 'otherwise secured' on disk; override 1 applies.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/routes/orders.py:1-30"
+          "read .env.local"
         ]
+      }
+    },
+    "cors_wildcard_credentials": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/main.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/main.py",
+            "start_line": 8,
+            "end_line": 9,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "CORS allows any origin with credentials",
+            "claim": "allow_origins=['*'] with allow_credentials=True makes the middleware reflect any Origin, so any site can send cookie-authenticated requests and read responses.",
+            "failure_scenario": "allow_origins=['*'] with allow_credentials=True makes the middleware reflect any Origin, so any site can send cookie-authenticated requests and read responses.",
+            "why_it_matters": "allow_origins=['*'] with allow_credentials=True makes the middleware reflect any Origin, so any site can send cookie-authenticated requests and read responses.",
+            "suggested_fix": "See: CORS allows any origin with credentials",
+            "evidence": [
+              {
+                "file": "app/main.py",
+                "line": 8,
+                "quote": "    allow_origins=[\"*\"],"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/main.py",
+                "line": 8,
+                "note": "any origin allowed"
+              },
+              {
+                "file": "app/main.py",
+                "line": 9,
+                "note": "credentials allowed, so the Origin is reflected"
+              }
+            ],
+            "exploit_scenario": "allow_origins=['*'] with allow_credentials=True makes the middleware reflect any Origin, so any site can send cookie-authenticated requests and read responses.",
+            "confidence": 0.92
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/main.py",
+            "line": 8,
+            "quote": "    allow_origins=[\"*\"],"
+          }
+        ],
+        "reason": "Wildcard origin with credentials is a concrete vulnerability; override 3 applies, not E7.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/main.py"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/main.py",
+            "line": 8,
+            "quote": "    allow_origins=[\"*\"],"
+          }
+        ],
+        "reason": "Wildcard origin with credentials is a concrete vulnerability; override 3 applies, not E7.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/main.py"
+        ]
+      }
+    },
+    "db_url_guard_hostaddr": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/db/reset.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/db/reset.py",
+            "start_line": 9,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "data_integrity",
+            "severity": "critical",
+            "effort": "quick_win",
+            "title": "Local-host guard ignores hostaddr",
+            "claim": "The guard checks only url.host; libpq connects to ?hostaddr= (or PGHOSTADDR) when set, so a URL with host=localhost and hostaddr of a remote server passes the guard and drops the remote schema.",
+            "failure_scenario": "postgresql://u@localhost/app?hostaddr=10.0.0.5 -> parsed.host is 'localhost', libpq connects to 10.0.0.5 and DROP SCHEMA runs there.",
+            "why_it_matters": "postgresql://u@localhost/app?hostaddr=10.0.0.5 -> parsed.host is 'localhost', libpq connects to 10.0.0.5 and DROP SCHEMA runs there.",
+            "suggested_fix": "Also reject a hostaddr query parameter and a PGHOSTADDR environment variable, or check the server address after connecting.",
+            "evidence": [
+              {
+                "file": "app/db/reset.py",
+                "line": 9,
+                "quote": "    if parsed.host not in LOCAL_HOSTS:"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/db/reset.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/db/reset.py",
+            "line": 9,
+            "quote": "    if parsed.host not in LOCAL_HOSTS:"
+          }
+        ],
+        "reason": "The guard checks only url.host; libpq connects to ?hostaddr= (or PGHOSTADDR) when set, so a URL with host=localhost and hostaddr of a remote server passes the guard and drops the remote schema.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/db/reset.py"
+        ]
+      },
+      "adjudicator": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/db/reset.py",
+            "line": 9,
+            "quote": "    if parsed.host not in LOCAL_HOSTS:"
+          }
+        ],
+        "reason": "The guard checks only url.host; libpq connects to ?hostaddr= (or PGHOSTADDR) when set, so a URL with host=localhost and hostaddr of a remote server passes the guard and drops the remote schema.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/db/reset.py"
+        ]
+      }
+    },
+    "dotenv_test_reload": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "tests/test_settings.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:contracts_tests": {
+        "findings": [
+          {
+            "file": "tests/test_settings.py",
+            "start_line": 7,
+            "end_line": 9,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "contracts",
+            "severity": "minor",
+            "effort": "quick_win",
+            "title": "Reload re-reads .env.local after delenv",
+            "claim": "importlib.reload re-runs load_dotenv('.env.local'), which sets API_URL again after monkeypatch.delenv, so the test fails on any machine with that file.",
+            "failure_scenario": "a developer has .env.local with API_URL; the reload repopulates it and the assertion fails.",
+            "why_it_matters": "a developer has .env.local with API_URL; the reload repopulates it and the assertion fails.",
+            "suggested_fix": "Patch load_dotenv (or point it at an empty file) before reloading.",
+            "evidence": [
+              {
+                "file": "tests/test_settings.py",
+                "line": 7,
+                "quote": "    monkeypatch.delenv(\"API_URL\", raising=False)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "tests/test_settings.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "tests/test_settings.py",
+            "line": 7,
+            "quote": "    monkeypatch.delenv(\"API_URL\", raising=False)"
+          }
+        ],
+        "reason": "importlib.reload re-runs load_dotenv('.env.local'), which sets API_URL again after monkeypatch.delenv, so the test fails on any machine with that file.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read tests/test_settings.py"
+        ]
+      },
+      "adjudicator": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "tests/test_settings.py",
+            "line": 7,
+            "quote": "    monkeypatch.delenv(\"API_URL\", raising=False)"
+          }
+        ],
+        "reason": "importlib.reload re-runs load_dotenv('.env.local'), which sets API_URL again after monkeypatch.delenv, so the test fails on any machine with that file.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read tests/test_settings.py"
+        ]
+      }
+    },
+    "dropped_await": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/services/notify.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/services/notify.py",
+            "start_line": 11,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Async send_email is called without await",
+            "claim": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+            "failure_scenario": "No notification is delivered but notify_all reports success.",
+            "why_it_matters": "No notification is delivered but notify_all reports success.",
+            "suggested_fix": "await send_email(...).",
+            "evidence": [
+              {
+                "file": "app/services/notify.py",
+                "line": 11,
+                "quote": "        send_email(client, user[\"email\"], body)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/services/notify.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/services/notify.py",
+            "line": 11,
+            "quote": "        send_email(client, user[\"email\"], body)"
+          }
+        ],
+        "reason": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/services/notify.py:1-30"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/services/notify.py",
+            "line": 11,
+            "quote": "        send_email(client, user[\"email\"], body)"
+          }
+        ],
+        "reason": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/services/notify.py:1-30"
+        ],
+        "confidence_10": 9
       }
     },
     "fstring_sql": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/db/customers.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "security": {
         "findings": [
@@ -164,49 +550,455 @@
         ]
       }
     },
-    "shell_true": {
+    "json_constant_ok": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/config/defaults.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      }
+    },
+    "json_non_object": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/api/webhook.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/api/webhook.py",
+            "start_line": 10,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "minor",
+            "effort": "quick_win",
+            "title": "Non-object JSON body raises AttributeError",
+            "claim": "json.loads accepts any JSON value; a body that is a list, string or number has no .get, so event_id raises AttributeError instead of rejecting the request.",
+            "failure_scenario": "body '[1, 2]' -> AttributeError: 'list' object has no attribute 'get'.",
+            "why_it_matters": "body '[1, 2]' -> AttributeError: 'list' object has no attribute 'get'.",
+            "suggested_fix": "Check isinstance(data, dict) and reject other shapes.",
+            "evidence": [
+              {
+                "file": "app/api/webhook.py",
+                "line": 10,
+                "quote": "    data = json.loads(body)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/api/webhook.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/api/webhook.py",
+            "line": 10,
+            "quote": "    data = json.loads(body)"
+          }
+        ],
+        "reason": "json.loads accepts any JSON value; a body that is a list, string or number has no .get, so event_id raises AttributeError instead of rejecting the request.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/api/webhook.py"
+        ]
+      },
+      "adjudicator": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/api/webhook.py",
+            "line": 10,
+            "quote": "    data = json.loads(body)"
+          }
+        ],
+        "reason": "json.loads accepts any JSON value; a body that is a list, string or number has no .get, so event_id raises AttributeError instead of rejecting the request.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/api/webhook.py"
+        ]
+      }
+    },
+    "lexical_version_sort": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/release/versions.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/release/versions.py",
+            "start_line": 10,
+            "end_line": 10,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Version tags sorted as strings",
+            "claim": "sorted() orders tags lexically, so 'v1.9.0' sorts after 'v1.10.0' and latest_tag returns the older release.",
+            "failure_scenario": "tags ['v1.9.0', 'v1.10.0'] -> latest_tag returns 'v1.9.0'.",
+            "why_it_matters": "tags ['v1.9.0', 'v1.10.0'] -> latest_tag returns 'v1.9.0'.",
+            "suggested_fix": "Sort by a parsed version key (packaging.version.Version or a tuple of ints).",
+            "evidence": [
+              {
+                "file": "app/release/versions.py",
+                "line": 10,
+                "quote": "    return sorted(tags)[-1]"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/release/versions.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/release/versions.py",
+            "line": 10,
+            "quote": "    return sorted(tags)[-1]"
+          }
+        ],
+        "reason": "sorted() orders tags lexically, so 'v1.9.0' sorts after 'v1.10.0' and latest_tag returns the older release.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/release/versions.py"
+        ]
+      },
+      "adjudicator": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/release/versions.py",
+            "line": 10,
+            "quote": "    return sorted(tags)[-1]"
+          }
+        ],
+        "reason": "sorted() orders tags lexically, so 'v1.9.0' sorts after 'v1.10.0' and latest_tag returns the older release.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/release/versions.py"
+        ]
+      }
+    },
+    "migration_bootstrap_drift": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "db/migrations/0002_account_status.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:data_concurrency": {
+        "findings": [
+          {
+            "file": "db/migrations/0002_account_status.py",
+            "start_line": 5,
+            "end_line": 8,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "data_integrity",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Migration adds accounts.status but the bootstrap schema does not",
+            "claim": "bootstrap() builds fresh databases from db/schema.sql and marks every migration applied; schema.sql has no status column, so 0002 never runs there and suspended_accounts raises 'no such column: status'.",
+            "failure_scenario": "bootstrap() builds fresh databases from db/schema.sql and marks every migration applied; schema.sql has no status column, so 0002 never runs there and suspended_accounts raises 'no such column: status'.",
+            "why_it_matters": "bootstrap() builds fresh databases from db/schema.sql and marks every migration applied; schema.sql has no status column, so 0002 never runs there and suspended_accounts raises 'no such column: status'.",
+            "suggested_fix": "Fix: Migration adds accounts.status but the bootstrap schema does not",
+            "evidence": [
+              {
+                "file": "db/migrations/0002_account_status.py",
+                "line": 6,
+                "quote": "        \"ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active' \""
+              },
+              {
+                "file": "db/schema.sql",
+                "line": 4,
+                "quote": "    email TEXT NOT NULL UNIQUE"
+              },
+              {
+                "file": "db/bootstrap.py",
+                "line": 11,
+                "quote": "        conn.execute(\"INSERT INTO schema_migrations (id) VALUES (?)\", (mid,))"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [
+          "db/schema.sql",
+          "db/bootstrap.py"
+        ],
+        "coverage": [
+          {
+            "file": "db/migrations/0002_account_status.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "db/migrations/0002_account_status.py",
+            "line": 6,
+            "quote": "        \"ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active' \""
+          },
+          {
+            "file": "db/schema.sql",
+            "line": 4,
+            "quote": "    email TEXT NOT NULL UNIQUE"
+          },
+          {
+            "file": "db/bootstrap.py",
+            "line": 11,
+            "quote": "        conn.execute(\"INSERT INTO schema_migrations (id) VALUES (?)\", (mid,))"
+          }
+        ],
+        "reason": "schema.sql ends the accounts table at email; bootstrap stamps 0002 without running it.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read db/migrations/0002_account_status.py",
+          "read db/schema.sql",
+          "read db/bootstrap.py"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "db/migrations/0002_account_status.py",
+            "line": 6,
+            "quote": "        \"ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active' \""
+          },
+          {
+            "file": "db/schema.sql",
+            "line": 4,
+            "quote": "    email TEXT NOT NULL UNIQUE"
+          },
+          {
+            "file": "db/bootstrap.py",
+            "line": 11,
+            "quote": "        conn.execute(\"INSERT INTO schema_migrations (id) VALUES (?)\", (mid,))"
+          }
+        ],
+        "reason": "schema.sql ends the accounts table at email; bootstrap stamps 0002 without running it.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read db/migrations/0002_account_status.py",
+          "read db/schema.sql",
+          "read db/bootstrap.py"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "migration_dialect_skip_ok": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "migrations/versions/0003_trgm.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      }
+    },
+    "migration_early_return_stamp": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "migrations/versions/0002_backfill.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:data_concurrency": {
+        "findings": [
+          {
+            "file": "migrations/versions/0002_backfill.py",
+            "start_line": 12,
+            "end_line": 14,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "data_integrity",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Early return stamps a migration that did nothing",
+            "claim": "When DEFAULT_TENANT is unset, upgrade returns without the backfill but Alembic still stamps revision 0002, so the backfill never runs on a later deploy.",
+            "failure_scenario": "deploy without DEFAULT_TENANT: alembic_version becomes 0002, orders keep NULL tenant_id forever.",
+            "why_it_matters": "deploy without DEFAULT_TENANT: alembic_version becomes 0002, orders keep NULL tenant_id forever.",
+            "suggested_fix": "Raise when DEFAULT_TENANT is missing instead of returning.",
+            "evidence": [
+              {
+                "file": "migrations/versions/0002_backfill.py",
+                "line": 12,
+                "quote": "    tenant = os.environ.get(\"DEFAULT_TENANT\")"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "migrations/versions/0002_backfill.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "migrations/versions/0002_backfill.py",
+            "line": 12,
+            "quote": "    tenant = os.environ.get(\"DEFAULT_TENANT\")"
+          }
+        ],
+        "reason": "When DEFAULT_TENANT is unset, upgrade returns without the backfill but Alembic still stamps revision 0002, so the backfill never runs on a later deploy.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read migrations/versions/0002_backfill.py"
+        ]
+      },
+      "adjudicator": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "migrations/versions/0002_backfill.py",
+            "line": 12,
+            "quote": "    tenant = os.environ.get(\"DEFAULT_TENANT\")"
+          }
+        ],
+        "reason": "When DEFAULT_TENANT is unset, upgrade returns without the backfill but Alembic still stamps revision 0002, so the backfill never runs on a later deploy.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read migrations/versions/0002_backfill.py"
+        ]
+      }
+    },
+    "missing_auth": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/routes/orders.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "security": {
         "findings": [
           {
-            "file": "app/tools/export.py",
-            "start_line": 6,
-            "end_line": 9,
+            "file": "app/routes/orders.py",
+            "start_line": 13,
+            "end_line": 14,
             "caused_by": null,
             "lane": "inline",
             "category": "security",
             "severity": "critical",
             "effort": "quick_win",
-            "title": "Command injection through shell=True with interpolated input",
-            "claim": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
-            "failure_scenario": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
-            "why_it_matters": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
-            "suggested_fix": "Pass an argument list and drop shell=True.",
+            "title": "delete_order has no authentication or role check",
+            "claim": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
+            "failure_scenario": "An unauthenticated request deletes any order row.",
+            "why_it_matters": "An unauthenticated request deletes any order row.",
+            "suggested_fix": "Restore @require_role('admin') and the current_user check.",
             "evidence": [
               {
-                "file": "app/tools/export.py",
-                "line": 8,
-                "quote": "        shell=True,"
+                "file": "app/routes/orders.py",
+                "line": 14,
+                "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
               }
             ],
             "bug_class_instances": [],
             "rule_quote": null,
             "trace": [
               {
-                "file": "app/tools/export.py",
-                "line": 6,
+                "file": "app/routes/orders.py",
+                "line": 13,
                 "note": "untrusted input reaches this line"
               },
               {
-                "file": "app/tools/export.py",
-                "line": 8,
+                "file": "app/routes/orders.py",
+                "line": 14,
                 "note": "the unsafe operation happens here"
               }
             ],
-            "exploit_scenario": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "exploit_scenario": "An unauthenticated request deletes any order row.",
             "confidence": 0.92
           }
         ],
@@ -216,16 +1008,16 @@
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/tools/export.py",
-            "line": 8,
-            "quote": "        shell=True,"
+            "file": "app/routes/orders.py",
+            "line": 14,
+            "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
           }
         ],
-        "reason": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+        "reason": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/tools/export.py:1-30"
+          "read app/routes/orders.py:1-30"
         ],
         "confidence_10": 9
       },
@@ -233,23 +1025,75 @@
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/tools/export.py",
-            "line": 8,
-            "quote": "        shell=True,"
+            "file": "app/routes/orders.py",
+            "line": 14,
+            "quote": "    result = db.execute(\"DELETE FROM orders WHERE id = %s\", (order_id,))"
           }
         ],
-        "reason": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+        "reason": "delete_order dropped its require_role decorator and current_user check, so any caller can delete orders.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/tools/export.py:1-30"
+          "read app/routes/orders.py:1-30"
+        ]
+      }
+    },
+    "natural_sort_ok": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/release/natsort.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      }
+    },
+    "nonatomic_claim": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/queue/claims.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/queue/claims.py",
+            "line": 1,
+            "quote": "\"\"\"Job queue worker.\"\"\""
+          }
+        ],
+        "reason": "unused",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/queue/claims.py:1-30"
         ]
       }
     },
     "path_traversal": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/files/download.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "security": {
         "findings": [
@@ -328,190 +1172,684 @@
         ]
       }
     },
-    "dropped_await": {
+    "pipe_hides_push_failure": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "scripts/publish.sh",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "finder:correctness": {
         "findings": [
           {
-            "file": "app/services/notify.py",
-            "start_line": 11,
-            "end_line": 11,
+            "file": "scripts/publish.sh",
+            "start_line": 4,
+            "end_line": 4,
             "caused_by": null,
             "lane": "inline",
             "category": "correctness",
             "severity": "major",
             "effort": "quick_win",
-            "title": "Async send_email is called without await",
-            "claim": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
-            "failure_scenario": "No notification is delivered but notify_all reports success.",
-            "why_it_matters": "No notification is delivered but notify_all reports success.",
-            "suggested_fix": "await send_email(...).",
+            "title": "Pipe to tee hides a failed push",
+            "claim": "Without set -o pipefail the pipeline's status is tee's, so a failed git push does not stop the script under set -e and it prints 'published'.",
+            "failure_scenario": "the remote rejects the tag push; git exits 1, tee exits 0, the script reports success.",
+            "why_it_matters": "the remote rejects the tag push; git exits 1, tee exits 0, the script reports success.",
+            "suggested_fix": "Add set -o pipefail (or check PIPESTATUS[0]).",
             "evidence": [
               {
-                "file": "app/services/notify.py",
-                "line": 11,
-                "quote": "        send_email(client, user[\"email\"], body)"
+                "file": "scripts/publish.sh",
+                "line": 4,
+                "quote": "git push origin \"$TAG\" 2>&1 | tee push.log"
               }
             ],
             "bug_class_instances": [],
             "rule_quote": null
           }
         ],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "scripts/publish.sh",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "verifier": {
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/services/notify.py",
-            "line": 11,
-            "quote": "        send_email(client, user[\"email\"], body)"
+            "file": "scripts/publish.sh",
+            "line": 4,
+            "quote": "git push origin \"$TAG\" 2>&1 | tee push.log"
           }
         ],
-        "reason": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+        "reason": "Without set -o pipefail the pipeline's status is tee's, so a failed git push does not stop the script under set -e and it prints 'published'.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/services/notify.py:1-30"
+          "read scripts/publish.sh"
         ]
       },
-      "verifier:security": {
+      "adjudicator": {
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/services/notify.py",
-            "line": 11,
-            "quote": "        send_email(client, user[\"email\"], body)"
+            "file": "scripts/publish.sh",
+            "line": 4,
+            "quote": "git push origin \"$TAG\" 2>&1 | tee push.log"
           }
         ],
-        "reason": "send_email is a coroutine function; calling it without await never runs it, yet sent is incremented.",
+        "reason": "Without set -o pipefail the pipeline's status is tee's, so a failed git push does not stop the script under set -e and it prints 'published'.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/services/notify.py:1-30"
-        ],
-        "confidence_10": 9
+          "read scripts/publish.sh"
+        ]
       }
     },
-    "swallowed_exception": {
+    "pipefail_ok": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "scripts/deploy_logs.sh",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      }
+    },
+    "plan_progress_drift": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "PROGRESS.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "finder:correctness": {
         "findings": [
           {
-            "file": "app/sync/calendar_sync.py",
-            "start_line": 10,
-            "end_line": 11,
+            "file": "PROGRESS.md",
+            "start_line": 3,
+            "end_line": 3,
             "caused_by": null,
             "lane": "inline",
-            "category": "error_handling",
-            "severity": "major",
+            "category": "correctness",
+            "severity": "minor",
             "effort": "quick_win",
-            "title": "Broad except swallows every sync failure",
-            "claim": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
-            "failure_scenario": "An API outage silently drops appointments.",
-            "why_it_matters": "An API outage silently drops appointments.",
-            "suggested_fix": "Log and re-raise, or catch the specific error.",
+            "title": "PROGRESS and PLAN disagree on backup retention",
+            "claim": "PROGRESS.md says 7 backups are kept; PLAN.md, changed in the same diff, says 8 days.",
+            "failure_scenario": "PROGRESS.md says 7 backups are kept; PLAN.md, changed in the same diff, says 8 days.",
+            "why_it_matters": "PROGRESS.md says 7 backups are kept; PLAN.md, changed in the same diff, says 8 days.",
+            "suggested_fix": "Fix: PROGRESS and PLAN disagree on backup retention",
             "evidence": [
               {
-                "file": "app/sync/calendar_sync.py",
-                "line": 10,
-                "quote": "    except Exception:"
+                "file": "PROGRESS.md",
+                "line": 3,
+                "quote": "- Backups: done. Nightly, 7 kept."
+              },
+              {
+                "file": "PLAN.md",
+                "line": 3,
+                "quote": "1. Nightly database backups, kept for 8 days."
               }
             ],
             "bug_class_instances": [],
             "rule_quote": null
           }
         ],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "PROGRESS.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "verifier": {
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/sync/calendar_sync.py",
-            "line": 10,
-            "quote": "    except Exception:"
+            "file": "PROGRESS.md",
+            "line": 3,
+            "quote": "- Backups: done. Nightly, 7 kept."
+          },
+          {
+            "file": "PLAN.md",
+            "line": 3,
+            "quote": "1. Nightly database backups, kept for 8 days."
           }
         ],
-        "reason": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+        "reason": "Both changed docs state different retention.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/sync/calendar_sync.py:1-30"
+          "read PROGRESS.md",
+          "read PLAN.md"
         ]
       },
       "verifier:security": {
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/sync/calendar_sync.py",
-            "line": 10,
-            "quote": "    except Exception:"
+            "file": "PROGRESS.md",
+            "line": 3,
+            "quote": "- Backups: done. Nightly, 7 kept."
+          },
+          {
+            "file": "PLAN.md",
+            "line": 3,
+            "quote": "1. Nightly database backups, kept for 8 days."
           }
         ],
-        "reason": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+        "reason": "Both changed docs state different retention.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/sync/calendar_sync.py:1-30"
+          "read PROGRESS.md",
+          "read PLAN.md"
         ],
         "confidence_10": 9
       }
     },
-    "nonatomic_claim": {
+    "prompt_injection_grade": {
       "__default__": {
         "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/grading/essays.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/grading/essays.py",
+            "start_line": 8,
+            "end_line": 9,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Student notes reach the grader's system prompt",
+            "claim": "submission['notes'] is appended to the system prompt, so a student can instruct the grader to award any score.",
+            "failure_scenario": "submission['notes'] is appended to the system prompt, so a student can instruct the grader to award any score.",
+            "why_it_matters": "submission['notes'] is appended to the system prompt, so a student can instruct the grader to award any score.",
+            "suggested_fix": "See: Student notes reach the grader's system prompt",
+            "evidence": [
+              {
+                "file": "app/grading/essays.py",
+                "line": 8,
+                "quote": "    system = SYSTEM + \"\\n\\nNotes from the student:\\n\" + submission[\"notes\"]"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/grading/essays.py",
+                "line": 8,
+                "note": "student-controlled notes appended to the system prompt"
+              },
+              {
+                "file": "app/grading/essays.py",
+                "line": 10,
+                "note": "the model's score is trusted as the grade"
+              }
+            ],
+            "exploit_scenario": "submission['notes'] is appended to the system prompt, so a student can instruct the grader to award any score.",
+            "confidence": 0.92
+          }
+        ],
         "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/grading/essays.py",
+            "line": 8,
+            "quote": "    system = SYSTEM + \"\\n\\nNotes from the student:\\n\" + submission[\"notes\"]"
+          }
+        ],
+        "reason": "Untrusted content in an instruction position decides the grade; override 2 applies, not E14.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/grading/essays.py"
+        ],
+        "confidence_10": 9
       },
       "verifier": {
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/queue/claims.py",
-            "line": 1,
-            "quote": "\"\"\"Job queue worker.\"\"\""
+            "file": "app/grading/essays.py",
+            "line": 8,
+            "quote": "    system = SYSTEM + \"\\n\\nNotes from the student:\\n\" + submission[\"notes\"]"
           }
         ],
-        "reason": "unused",
+        "reason": "Untrusted content in an instruction position decides the grade; override 2 applies, not E14.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/queue/claims.py:1-30"
+          "read app/grading/essays.py"
         ]
       }
     },
-    "benign_refactor": {
+    "prompt_md_kept": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "prompts/agent/system.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "prompts/agent/system.md",
+            "start_line": 3,
+            "end_line": 3,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "contracts",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Prompt asks for prose but the caller parses JSON",
+            "claim": "system.md still asks for plain prose while app/agent.py parses every reply with json.loads and reads data['answer'].",
+            "failure_scenario": "system.md still asks for plain prose while app/agent.py parses every reply with json.loads and reads data['answer'].",
+            "why_it_matters": "system.md still asks for plain prose while app/agent.py parses every reply with json.loads and reads data['answer'].",
+            "suggested_fix": "Fix: Prompt asks for prose but the caller parses JSON",
+            "evidence": [
+              {
+                "file": "prompts/agent/system.md",
+                "line": 3,
+                "quote": "Reply in plain prose. When you are unsure, say so in one sentence."
+              },
+              {
+                "file": "app/agent.py",
+                "line": 13,
+                "quote": "    data = parse_reply(reply_text)"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "prompts/agent/system.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "verifier": {
         "verdict": "CONFIRMED",
         "evidence": [
           {
-            "file": "app/utils/formatting.py",
-            "line": 1,
-            "quote": "\"\"\"Order totals.\"\"\""
+            "file": "prompts/agent/system.md",
+            "line": 3,
+            "quote": "Reply in plain prose. When you are unsure, say so in one sentence."
+          },
+          {
+            "file": "app/agent.py",
+            "line": 13,
+            "quote": "    data = parse_reply(reply_text)"
           }
         ],
-        "reason": "unused",
+        "reason": "parse_reply is json.loads; a prose reply raises JSONDecodeError.",
         "severity_adjusted": null,
         "confidence": 5,
         "checks_performed": [
-          "read app/utils/formatting.py:1-30"
+          "read prompts/agent/system.md",
+          "read app/agent.py"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "prompts/agent/system.md",
+            "line": 3,
+            "quote": "Reply in plain prose. When you are unsure, say so in one sentence."
+          },
+          {
+            "file": "app/agent.py",
+            "line": 13,
+            "quote": "    data = parse_reply(reply_text)"
+          }
+        ],
+        "reason": "parse_reply is json.loads; a prose reply raises JSONDecodeError.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read prompts/agent/system.md",
+          "read app/agent.py"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "prompt_rule_contradiction": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "prompts/tutor/hints.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "prompts/tutor/hints.md",
+            "start_line": 4,
+            "end_line": 4,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Hint layer tells the model to show the answer the base layer forbids",
+            "claim": "hints.md step 2 says to show the final answer; base.md, composed with it, says never to show the final answer.",
+            "failure_scenario": "hints.md step 2 says to show the final answer; base.md, composed with it, says never to show the final answer.",
+            "why_it_matters": "hints.md step 2 says to show the final answer; base.md, composed with it, says never to show the final answer.",
+            "suggested_fix": "Fix: Hint layer tells the model to show the answer the base layer forbids",
+            "evidence": [
+              {
+                "file": "prompts/tutor/hints.md",
+                "line": 4,
+                "quote": "2. Show the final answer so the student can check their work."
+              },
+              {
+                "file": "prompts/tutor/base.md",
+                "line": 3,
+                "quote": "Never show the worked solution or the final answer. Ask one guiding question at a time."
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "prompts/tutor/hints.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "prompts/tutor/hints.md",
+            "line": 4,
+            "quote": "2. Show the final answer so the student can check their work."
+          },
+          {
+            "file": "prompts/tutor/base.md",
+            "line": 3,
+            "quote": "Never show the worked solution or the final answer. Ask one guiding question at a time."
+          }
+        ],
+        "reason": "Both layers are loaded together and give opposite instructions on the final answer.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read prompts/tutor/hints.md",
+          "read prompts/tutor/base.md"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "prompts/tutor/hints.md",
+            "line": 4,
+            "quote": "2. Show the final answer so the student can check their work."
+          },
+          {
+            "file": "prompts/tutor/base.md",
+            "line": 3,
+            "quote": "Never show the worked solution or the final answer. Ask one guiding question at a time."
+          }
+        ],
+        "reason": "Both layers are loaded together and give opposite instructions on the final answer.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read prompts/tutor/hints.md",
+          "read prompts/tutor/base.md"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "runbook_job_order": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "deploy/k8s/README.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:deploy_ci": {
+        "findings": [
+          {
+            "file": "deploy/k8s/README.md",
+            "start_line": 5,
+            "end_line": 5,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Runbook never deletes the old migrate Job",
+            "claim": "Step 1 applies the migrate Job and no step deletes it; on every later deploy the old completed Job still exists, so the apply reports it unchanged and the new release's migrations never run (a template change fails instead: a Job's pod template is immutable).",
+            "failure_scenario": "Step 1 applies the migrate Job and no step deletes it; on every later deploy the old completed Job still exists, so the apply reports it unchanged and the new release's migrations never run (a template change fails instead: a Job's pod template is immutable).",
+            "why_it_matters": "Step 1 applies the migrate Job and no step deletes it; on every later deploy the old completed Job still exists, so the apply reports it unchanged and the new release's migrations never run (a template change fails instead: a Job's pod template is immutable).",
+            "suggested_fix": "Delete the old Job before step 1, or give each run a unique name.",
+            "evidence": [
+              {
+                "file": "deploy/k8s/README.md",
+                "line": 5,
+                "quote": "1. `kubectl apply -f deploy/k8s/migrate-job.yaml`"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [
+          "deploy/k8s/migrate-job.yaml"
+        ],
+        "coverage": [
+          {
+            "file": "deploy/k8s/README.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "deploy/k8s/README.md",
+            "line": 5,
+            "quote": "1. `kubectl apply -f deploy/k8s/migrate-job.yaml`"
+          }
+        ],
+        "reason": "No step deletes the Job, so the next apply hits the old completed Job.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read deploy/k8s/README.md"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "deploy/k8s/README.md",
+            "line": 5,
+            "quote": "1. `kubectl apply -f deploy/k8s/migrate-job.yaml`"
+          }
+        ],
+        "reason": "Job spec.template is immutable.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read deploy/k8s/README.md"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "shell_true": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/tools/export.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "security": {
+        "findings": [
+          {
+            "file": "app/tools/export.py",
+            "start_line": 6,
+            "end_line": 9,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "critical",
+            "effort": "quick_win",
+            "title": "Command injection through shell=True with interpolated input",
+            "claim": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+            "failure_scenario": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "why_it_matters": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "suggested_fix": "Pass an argument list and drop shell=True.",
+            "evidence": [
+              {
+                "file": "app/tools/export.py",
+                "line": 8,
+                "quote": "        shell=True,"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null,
+            "trace": [
+              {
+                "file": "app/tools/export.py",
+                "line": 6,
+                "note": "untrusted input reaches this line"
+              },
+              {
+                "file": "app/tools/export.py",
+                "line": 8,
+                "note": "the unsafe operation happens here"
+              }
+            ],
+            "exploit_scenario": "dest_dir = '/tmp; rm -rf ~' executes an arbitrary command.",
+            "confidence": 0.92
+          }
+        ],
+        "files_read_outside_packet": []
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/tools/export.py",
+            "line": 8,
+            "quote": "        shell=True,"
+          }
+        ],
+        "reason": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/tools/export.py:1-30"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/tools/export.py",
+            "line": 8,
+            "quote": "        shell=True,"
+          }
+        ],
+        "reason": "subprocess.run builds a shell command string from report_id and dest_dir and runs it with shell=True.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/tools/export.py:1-30"
         ]
       }
     },
     "stale_doc_ledger": {
       "__default__": {
         "findings": [],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "docs/CHANGES.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "finder:correctness": {
         "findings": [
@@ -545,7 +1883,15 @@
             "rule_quote": null
           }
         ],
-        "files_read_outside_packet": []
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "docs/CHANGES.md",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
       },
       "verifier": {
         "verdict": "CONFIRMED",
@@ -591,6 +1937,384 @@
           "read docs/CHANGES.md:1-6"
         ],
         "confidence_10": 9
+      }
+    },
+    "swallowed_exception": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "start_line": 10,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "error_handling",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Broad except swallows every sync failure",
+            "claim": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+            "failure_scenario": "An API outage silently drops appointments.",
+            "why_it_matters": "An API outage silently drops appointments.",
+            "suggested_fix": "Log and re-raise, or catch the specific error.",
+            "evidence": [
+              {
+                "file": "app/sync/calendar_sync.py",
+                "line": 10,
+                "quote": "    except Exception:"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "line": 10,
+            "quote": "    except Exception:"
+          }
+        ],
+        "reason": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/sync/calendar_sync.py:1-30"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/sync/calendar_sync.py",
+            "line": 10,
+            "quote": "    except Exception:"
+          }
+        ],
+        "reason": "except Exception: pass hides push failures, so sync_appointment returns True even when the push failed.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/sync/calendar_sync.py:1-30"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "vacuous_test": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "tests/test_orders.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:contracts_tests": {
+        "findings": [
+          {
+            "file": "tests/test_orders.py",
+            "start_line": 7,
+            "end_line": 8,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "contracts",
+            "severity": "minor",
+            "effort": "quick_win",
+            "title": "Cancel test passes without cancelling anything",
+            "claim": "The test never creates o-1, so cancel_order returns early, store.get returns None and the 'is None or' assertion passes even if cancel_order is empty.",
+            "failure_scenario": "The test never creates o-1, so cancel_order returns early, store.get returns None and the 'is None or' assertion passes even if cancel_order is empty.",
+            "why_it_matters": "The test never creates o-1, so cancel_order returns early, store.get returns None and the 'is None or' assertion passes even if cancel_order is empty.",
+            "suggested_fix": "Fix: Cancel test passes without cancelling anything",
+            "evidence": [
+              {
+                "file": "tests/test_orders.py",
+                "line": 8,
+                "quote": "    assert store.get(\"o-1\") is None or store.get(\"o-1\")[\"status\"] == \"cancelled\""
+              },
+              {
+                "file": "app/orders.py",
+                "line": 10,
+                "quote": "    if order is None:"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "tests/test_orders.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "tests/test_orders.py",
+            "line": 8,
+            "quote": "    assert store.get(\"o-1\") is None or store.get(\"o-1\")[\"status\"] == \"cancelled\""
+          },
+          {
+            "file": "app/orders.py",
+            "line": 10,
+            "quote": "    if order is None:"
+          }
+        ],
+        "reason": "No create_order call before cancel_order; the first disjunct is always true.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read tests/test_orders.py",
+          "read app/orders.py"
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "tests/test_orders.py",
+            "line": 8,
+            "quote": "    assert store.get(\"o-1\") is None or store.get(\"o-1\")[\"status\"] == \"cancelled\""
+          },
+          {
+            "file": "app/orders.py",
+            "line": 10,
+            "quote": "    if order is None:"
+          }
+        ],
+        "reason": "No create_order call before cancel_order; the first disjunct is always true.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read tests/test_orders.py",
+          "read app/orders.py"
+        ],
+        "confidence_10": 9
+      }
+    },
+    "verify_exit_zero": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/release/verify.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:correctness": {
+        "findings": [
+          {
+            "file": "app/release/verify.py",
+            "start_line": 7,
+            "end_line": 9,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "correctness",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "Smoke-test exit code ignored",
+            "claim": "subprocess.run is called without check=True and its returncode is never read, so verify_release returns True when the smoke test fails.",
+            "failure_scenario": "make smoke-test exits 2 for a broken build; verify_release still prints 'verified' and returns True.",
+            "why_it_matters": "make smoke-test exits 2 for a broken build; verify_release still prints 'verified' and returns True.",
+            "suggested_fix": "Pass check=True or test returncode before returning True.",
+            "evidence": [
+              {
+                "file": "app/release/verify.py",
+                "line": 7,
+                "quote": "    subprocess.run([\"make\", \"smoke-test\", f\"TAG={tag}\"])"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": "app/release/verify.py",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/release/verify.py",
+            "line": 7,
+            "quote": "    subprocess.run([\"make\", \"smoke-test\", f\"TAG={tag}\"])"
+          }
+        ],
+        "reason": "subprocess.run is called without check=True and its returncode is never read, so verify_release returns True when the smoke test fails.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/release/verify.py"
+        ]
+      },
+      "adjudicator": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": "app/release/verify.py",
+            "line": 7,
+            "quote": "    subprocess.run([\"make\", \"smoke-test\", f\"TAG={tag}\"])"
+          }
+        ],
+        "reason": "subprocess.run is called without check=True and its returncode is never read, so verify_release returns True when the smoke test fails.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read app/release/verify.py"
+        ]
+      }
+    },
+    "workflow_run_pr_deploy": {
+      "__default__": {
+        "findings": [],
+        "files_read_outside_packet": [],
+        "coverage": [
+          {
+            "file": ".github/workflows/deploy.yml",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "finder:deploy_ci": {
+        "findings": [
+          {
+            "file": ".github/workflows/deploy.yml",
+            "start_line": 11,
+            "end_line": 11,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "security",
+            "severity": "major",
+            "effort": "quick_win",
+            "title": "workflow_run deploy does not check event == 'push'",
+            "claim": "The deploy runs after any successful ci run; ci also runs on pull_request, so a pull request's head_sha is deployed to production.",
+            "failure_scenario": "The deploy runs after any successful ci run; ci also runs on pull_request, so a pull request's head_sha is deployed to production.",
+            "why_it_matters": "The deploy runs after any successful ci run; ci also runs on pull_request, so a pull request's head_sha is deployed to production.",
+            "suggested_fix": "See: workflow_run deploy does not check event == 'push'",
+            "evidence": [
+              {
+                "file": ".github/workflows/deploy.yml",
+                "line": 11,
+                "quote": "if: github.event.workflow_run.conclusion == 'success'"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          },
+          {
+            "file": ".github/workflows/deploy.yml",
+            "start_line": 10,
+            "end_line": 10,
+            "caused_by": null,
+            "lane": "inline",
+            "category": "concurrency",
+            "severity": "minor",
+            "effort": "quick_win",
+            "title": "deploy has no concurrency group",
+            "claim": "The deploy workflow has no concurrency group, so two ci runs finishing close together start two production deploys and the older commit can land last.",
+            "failure_scenario": "The deploy workflow has no concurrency group, so two ci runs finishing close together start two production deploys and the older commit can land last.",
+            "why_it_matters": "The deploy workflow has no concurrency group, so two ci runs finishing close together start two production deploys and the older commit can land last.",
+            "suggested_fix": "See: deploy has no concurrency group",
+            "evidence": [
+              {
+                "file": ".github/workflows/deploy.yml",
+                "line": 10,
+                "quote": "deploy:"
+              }
+            ],
+            "bug_class_instances": [],
+            "rule_quote": null
+          }
+        ],
+        "files_read_outside_packet": [
+          ".github/workflows/ci.yml"
+        ],
+        "coverage": [
+          {
+            "file": ".github/workflows/deploy.yml",
+            "symbol_or_hunk": "changed hunks",
+            "inputs_considered": "the diff and the code it calls",
+            "result": "checked"
+          }
+        ]
+      },
+      "verifier:security": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": ".github/workflows/deploy.yml",
+            "line": 11,
+            "quote": "if: github.event.workflow_run.conclusion == 'success'"
+          }
+        ],
+        "reason": "ci.yml runs on pull_request; no event check.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read .github/workflows/deploy.yml"
+        ],
+        "confidence_10": 9
+      },
+      "verifier": {
+        "verdict": "CONFIRMED",
+        "evidence": [
+          {
+            "file": ".github/workflows/deploy.yml",
+            "line": 11,
+            "quote": "if: github.event.workflow_run.conclusion == 'success'"
+          }
+        ],
+        "reason": "ci.yml runs on pull_request; no event check.",
+        "severity_adjusted": null,
+        "confidence": 5,
+        "checks_performed": [
+          "read .github/workflows/deploy.yml"
+        ]
       }
     }
   }

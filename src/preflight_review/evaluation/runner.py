@@ -14,7 +14,7 @@ from preflight_review.errors import ConfigError, GitError, SchemaError
 from preflight_review.evaluation.judge import deterministic_matches, judge_pairs
 from preflight_review.evaluation.score import GoldenItem, Match, Scores, score
 from preflight_review.evaluation.seeds import load_seeded_cases, materialise
-from preflight_review.findings import Finding
+from preflight_review.findings import Finding, Lane
 from preflight_review.model import FakeBackend
 from preflight_review.pipeline import ReviewOptions, run_review
 
@@ -71,9 +71,12 @@ def _options(repo: Path, base: str, backend_name: str, overrides: dict | None, *
     unknown = set(overrides or {}) - _SAFE_OVERRIDES
     if unknown:
         raise ConfigError(f"unsupported eval config override(s): {sorted(unknown)}")
+    # yes: an eval is started on purpose and has no terminal to confirm a large case on.
+    # mode: evals measure full depth (deep) so runs stay comparable; auto would send
+    # seeds without crucial paths to standard. An explicit "mode" override still wins.
     return ReviewOptions(
         repo_root=repo, base=base, full=True, include_worktree=False,
-        backend_name=backend_name, **{**kw, **extra},
+        backend_name=backend_name, yes=True, **{"mode": "deep", **kw, **extra},
     )
 
 
@@ -146,6 +149,24 @@ def _match(goldens, findings, backend, judge, judge_models, cwd) -> tuple[list[M
     return deterministic_matches(goldens, findings), None
 
 
+def _run_failed(run) -> bool:
+    """True when the review produced nothing to score: every finder lane failed, or the
+    usage-limit breaker paused it (skipped lanes and votes would score as misses).
+
+    Such a case (rate limit, auth error, CLI crash) says nothing about recall or
+    precision, so it is reported under ``failed`` and kept out of the scores
+    instead of being counted as a miss.
+    """
+    if run.outcome == "paused":
+        return True
+    return run.outcome != "complete" and "all lanes failed" in (run.incomplete_reasons or [])
+
+
+def _n_counted(findings: list[Finding]) -> int:
+    """Findings that enter the score denominators (inline lane only)."""
+    return sum(1 for f in findings if f.lane == Lane.inline)
+
+
 def run_eval(
     set_name: str,
     repo_root: Path | str,
@@ -164,8 +185,11 @@ def run_eval(
     repo_root = Path(repo_root)
     cases: list[dict] = []
     skipped: list[str] = []
+    failed: list[dict] = []
     all_goldens: list[GoldenItem] = []
     all_findings: list[Finding] = []
+    all_reported: list[Finding] = []  # report only: the denominator of precision_reported
+    n_unverified = 0
     all_matches: list[Match] = []
     agreements: list[float] = []
     cost = 0.0
@@ -179,7 +203,13 @@ def run_eval(
                 be = backend or _make_backend(backend_name, case.name)
                 opts = _options(repo, "main", backend_name, config_overrides)
                 run, _ = run_review(opts, backend=be, gh_runner=_no_gh)
+                cost += run.cost_usd
+                if _run_failed(run):
+                    failed.append({"name": case.name, "reasons": list(run.incomplete_reasons)})
+                    continue
                 found = _prefixed(list(run.policy.report) + list(run.policy.unverified), case.name)
+                reported = found[: len(run.policy.report)]
+                unverified = _n_counted(found[len(reported):])
                 matches, agree = _match(case.expected, found, be, judge, judge_models, repo)
                 if agree is not None:
                     agreements.append(agree)
@@ -188,11 +218,14 @@ def run_eval(
                     "name": case.name, "n_findings": case_scores.n_findings,
                     "matched": case_scores.matched_ids,
                     "false_positives": case_scores.false_positive_ids,
+                    "unverified": unverified,
                     "cost_usd": _r(run.cost_usd), "outcome": run.outcome,
+                    "incomplete_reasons": list(run.incomplete_reasons),
                 })
-                cost += run.cost_usd
                 all_goldens += case.expected
                 all_findings += found
+                all_reported += reported
+                n_unverified += unverified
                 all_matches += matches
 
         elif set_name == "golden":
@@ -218,19 +251,27 @@ def run_eval(
                 be = backend or _make_backend(backend_name)
                 opts = _options(clone, f"{commit}^", backend_name, config_overrides, walkthrough=False)
                 run, _ = run_review(opts, backend=be, gh_runner=_no_gh)
+                cost += run.cost_usd
+                if _run_failed(run):
+                    failed.append({"name": commit[:12], "reasons": list(run.incomplete_reasons)})
+                    continue
                 found = _prefixed(list(run.policy.report) + list(run.policy.unverified), commit[:8])
+                reported = found[: len(run.policy.report)]
+                unverified = _n_counted(found[len(reported):])
                 matches, agree = _match(goldens, found, be, judge, judge_models, clone)
                 if agree is not None:
                     agreements.append(agree)
                 cs = score(goldens, found, matches)
                 cases.append({
                     "name": commit[:12], "n_findings": cs.n_findings, "matched": cs.matched_ids,
-                    "false_positives": cs.false_positive_ids,
+                    "false_positives": cs.false_positive_ids, "unverified": unverified,
                     "cost_usd": _r(run.cost_usd), "outcome": run.outcome,
+                    "incomplete_reasons": list(run.incomplete_reasons),
                 })
-                cost += run.cost_usd
                 all_goldens += goldens
                 all_findings += found
+                all_reported += reported
+                n_unverified += unverified
                 all_matches += matches
 
         else:  # clean
@@ -249,19 +290,31 @@ def run_eval(
                 be = backend or _make_backend(backend_name)
                 opts = _options(clone, row["base_sha"], backend_name, config_overrides, walkthrough=False)
                 run, _ = run_review(opts, backend=be, gh_runner=_no_gh)
+                cost += run.cost_usd
+                if _run_failed(run):
+                    failed.append({"name": row.get("note") or src.name, "reasons": list(run.incomplete_reasons)})
+                    continue
                 confirmed = len(run.policy.report)
+                unverified = _n_counted(list(run.policy.unverified))
+                n_unverified += unverified
                 cases.append({
                     "name": row.get("note") or f"{src.name}:{row['head_sha'][:8]}",
                     "n_findings": confirmed, "confirmed": confirmed, "target": 0,
+                    "unverified": unverified,
                     "cost_usd": _r(run.cost_usd), "outcome": run.outcome,
+                    "incomplete_reasons": list(run.incomplete_reasons),
                 })
-                cost += run.cost_usd
                 all_findings += list(run.policy.report)
 
     if set_name == "clean":
         sc = Scores(None, None, None, None, len(all_findings), 0)
+        precision_reported = None
     else:
+        # ep_recall counts goldens surfaced in report or unverified; "precision" keeps the
+        # 1.0 definition (unverified findings in the denominator) for comparability, and
+        # precision_reported scores only what the report shows as confirmed.
         sc = score(all_goldens, all_findings, all_matches)
+        precision_reported = score(all_goldens, all_reported, all_matches).precision
 
     stamp = now()
     out = Path(out_dir)
@@ -275,16 +328,19 @@ def run_eval(
         "backend": backend_name if backend is None else getattr(backend, "name", backend_name),
         "judge": ",".join(judge_models) if judge else "none",
         "precision": _r(sc.precision),
+        "precision_reported": _r(precision_reported),
         "ep_recall": _r(sc.ep_recall),
         "snr": _r(sc.snr),
         "snr_note": sc.snr_note,
         "f1": _r(sc.f1),
         "n_findings": sc.n_findings,
         "n_goldens": sc.n_goldens,
+        "n_unverified": n_unverified,
         "per_category_recall": {k: _r(v) for k, v in sc.per_category_recall.items()},
         "agreement_rate": _r(sum(agreements) / len(agreements)) if agreements else None,
         "cases": cases,
         "skipped": skipped,
+        "failed": failed,
         "cost_usd": _r(cost),
         "path": str(path),
     }

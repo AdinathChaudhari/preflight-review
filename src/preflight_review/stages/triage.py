@@ -7,10 +7,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from preflight_review import prompts
-from preflight_review.config import Config
+from preflight_review.config import Config, call_cap
+from preflight_review.context.risk import is_prose_doc
 from preflight_review.model import ModelRequest, ModelResult
 from preflight_review.model.schemas import load_schema
-from preflight_review.scope import FileChange, Scope, only_docs_or_lockfiles
+from preflight_review.scope import FileChange, Scope, docs_only_skip
 
 logger = logging.getLogger("preflight_review.triage")
 
@@ -77,7 +78,7 @@ def _haiku(fc: FileChange, scope: Scope, config: Config, backend) -> tuple[str, 
             cwd=scope.repo_root,
             tools=[],
             max_turns=TRIAGE_MAX_TURNS,
-            max_budget_usd=TRIAGE_BUDGET_USD,
+            max_budget_usd=call_cap(config, TRIAGE_BUDGET_USD),
         )
         res = backend.run(req)
     except Exception as exc:  # never skip a file on error
@@ -88,10 +89,12 @@ def _haiku(fc: FileChange, scope: Scope, config: Config, backend) -> tuple[str, 
     return NEEDS_REVIEW, res
 
 
-def triage(scope: Scope, config: Config, backend) -> TriageResult:
+def triage(scope: Scope, config: Config, backend, review_docs: bool = False) -> TriageResult:
+    """`review_docs`: a path-gated lens covers some changed doc (a deploy runbook), so docs
+    are reviewed even under docs_review: off."""
     if not scope.files:
         return TriageResult(True, "empty diff", {})
-    if only_docs_or_lockfiles(scope):
+    if docs_only_skip(scope, config.docs_review) and not review_docs:
         return TriageResult(True, "docs/lockfile-only diff", {fc.path: SKIPPED for fc in scope.files})
 
     per_file: dict[str, str] = {}
@@ -114,6 +117,8 @@ def triage(scope: Scope, config: Config, backend) -> TriageResult:
     lane_results: dict[str, ModelResult] = {}
     if config.triage.haiku:
         for fc in undecided:
+            if (config.docs_review != "off" or review_docs) and is_prose_doc(fc.path):
+                continue  # docs are reviewed for consistency; Haiku never approves them
             decision, res = _haiku(fc, scope, config, backend)
             per_file[fc.path] = decision
             if res is not None:

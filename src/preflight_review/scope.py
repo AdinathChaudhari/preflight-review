@@ -400,10 +400,41 @@ def is_in_diff(scope: Scope, path: str, line: int) -> bool:
 
 
 _DOC_PATTERNS = ("*.md", "*.rst", "*.txt", "*.lock", "LICENSE*")
+_DOC_TEXT_PATTERNS = ("*.md", "*.rst", "*.txt")
+
+
+def _is_docs_or_lockfile(path: str) -> bool:
+    """Name matches a doc/lockfile pattern and the risk tier is "docs".
+
+    Prompt files and agent-instruction files (SKILL.md, CLAUDE.md, AGENTS.md, .claude/**)
+    have risk tier "source", so a diff of only those is not a docs-only diff.
+    """
+    from preflight_review.context.risk import risk_tier  # local: context imports scope
+
+    name = path.rsplit("/", 1)[-1]
+    return any(fnmatch.fnmatch(name, p) for p in _DOC_PATTERNS) and risk_tier(path) == "docs"
 
 
 def only_docs_or_lockfiles(scope: Scope) -> bool:
-    return all(
-        any(fnmatch.fnmatch(f.path.rsplit("/", 1)[-1], p) for p in _DOC_PATTERNS)
-        for f in scope.files
-    )
+    return all(_is_docs_or_lockfile(f.path) for f in scope.files)
+
+
+def has_doc_text(scope: Scope) -> bool:
+    """True when some changed, non-deleted file is prose (.md/.rst/.txt), not only
+    lockfiles, licences or requirements*.txt."""
+    def prose(name: str) -> bool:
+        return not name.startswith("requirements") and any(
+            fnmatch.fnmatch(name, p) for p in _DOC_TEXT_PATTERNS
+        )
+
+    return any(f.status != "D" and prose(f.path.rsplit("/", 1)[-1]) for f in scope.files)
+
+
+def docs_only_skip(scope: Scope, docs_review: str) -> bool:
+    """Skip model stages: a lockfile/licence-only diff, or a docs-only diff with docs_review off.
+
+    Under docs_review auto|on a docs-only diff with prose still gets a doc-consistency review.
+    """
+    if not only_docs_or_lockfiles(scope):
+        return False
+    return docs_review == "off" or not has_doc_text(scope)

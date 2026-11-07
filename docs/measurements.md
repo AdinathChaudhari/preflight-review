@@ -351,3 +351,29 @@ The path_traversal row was measured on an earlier seeded case of similar difficu
 ep_recall 1.00 (7/7), precision 1.00 (9/9), F1 1.00, judge agreement 1.00, 0 findings on the benign control.
 
 Limits: single-file cases with one obvious bug each, so this is a floor test. The two 2-finding cases point to duplicates that clustering did not merge. This answers Run 7 gap 3 only for small diffs; recall on real multi-file diffs needs the golden set.
+
+## Eval 2 — seeded set, real models, 1.1 exhaustive defaults (2026-11-07)
+
+`preflight-review eval --set seeded`, deep mode, judges sonnet+opus, 30 cases (25 with planted bugs, 26 expected findings, plus 5 clean controls). Defaults at the time: Opus finders and security lane, 3 Opus verifier votes per finding (Sonnet for rules findings), Fable adjudicator, one sweep per batch.
+
+| Run | precision (incl. unverified) | precision_reported | ep_recall | F1 | Findings | Unverified | USD |
+|---|---|---|---|---|---|---|---|
+| Before the eval fixes (security verifier v5 labels, seed fixes; CHANGELOG 1.1.0) | 0.569 | — | 0.960 | — | — | — | 27.48 |
+| After the eval fixes | 0.700 | 0.729 | 0.962 (25/26) | 0.810 | 50 | 2 | 26.94 |
+
+The one miss in the second run is `prompt_md_kept` (a prompt `.md` that still asks for prose while the code now parses JSON; the finding must be anchored on the prompt file). Whether the finders did not report it or a later stage dropped it was not established in this run. Cost per case averaged about $0.90.
+
+These numbers are for the exhaustive defaults. The lean defaults of 2026-11-07 (decision 15: Sonnet finders, security and sweep; up to 3 Sonnet votes with Opus only on escalated splits; tool findings and nits unverified; one sweep per run) change both cost and possibly recall and precision, so the seeded eval has to be re-measured before these figures are quoted for them.
+
+## Eval 3 — lean defaults, 6-case slice (2026-11-07)
+
+Lean defaults (Sonnet finders, up to 3 Sonnet votes with Opus only on critical splits, tool findings and nits unverified). Seeded slice of 6 cases (`benign_refactor`, `natural_sort_ok`, `fstring_sql`, `missing_auth`, `committed_env_file`, `migration_bootstrap_drift`), deep mode, judge sonnet+opus.
+
+| Metric | Lean (this run) | Exhaustive 1.1, same 6 cases |
+|---|---|---|
+| ep_recall | 1.000 (4/4) | 1.000 |
+| precision | 0.714 (5 of 7) | ~0.6 |
+| clean controls with findings | 0 of 2 | 1 of 2 |
+| USD | 1.61 | ~4.6 |
+
+A slice, not the full set: re-run all 30 cases only when a prompt or verifier change needs it (~$8-10 at lean prices).

@@ -13,6 +13,7 @@ from preflight_review.model.backend import (
     ModelResult,
     claude_version,
 )
+from preflight_review.model.limits import result_limit
 
 __all__ = ["CliBackend", "claude_version"]
 
@@ -38,8 +39,11 @@ def _parse_stdout(stdout: str) -> dict | None:
     return None
 
 
-# A retry with the same budget cap hits the cap again and just spends it twice.
-NO_RETRY_SUBTYPES = frozenset({"error_max_budget_usd"})
+# A retry with the same budget, turn or time cap hits the cap again and just spends it twice.
+NO_RETRY_SUBTYPES = frozenset({"error_max_budget_usd", "error_max_turns", "error_timeout"})
+
+# Deep Opus calls at high effort can run for tens of minutes; a timeout fails the lane.
+DEFAULT_TIMEOUT_S = 3600
 
 
 class CliBackend:
@@ -50,7 +54,7 @@ class CliBackend:
         claude_bin: str = "claude",
         runner: Callable = subprocess.run,
         retries: int = 1,
-        timeout_s: int = 900,
+        timeout_s: int = DEFAULT_TIMEOUT_S,
     ) -> None:
         self.claude_bin = claude_bin
         self.runner = runner
@@ -58,14 +62,19 @@ class CliBackend:
         self.timeout_s = timeout_s
 
     def build_argv(self, req: ModelRequest) -> list[str]:
-        return [
+        argv = [
             self.claude_bin,
             "-p",
             "--model", req.model,
             "--output-format", "json",
             "--json-schema", json.dumps(req.schema, separators=(",", ":")),
             "--max-turns", str(req.max_turns),
-            "--max-budget-usd", f"{req.max_budget_usd:.2f}",
+        ]
+        if req.max_budget_usd is not None:
+            argv += ["--max-budget-usd", f"{req.max_budget_usd:.2f}"]
+        if req.effort is not None:
+            argv += ["--effort", req.effort]
+        return argv + [
             "--setting-sources", "",
             "--system-prompt", req.system_prompt,
             "--no-session-persistence",
@@ -89,7 +98,12 @@ class CliBackend:
                 timeout=self.timeout_s,
                 env=env,
             )
-        except (subprocess.TimeoutExpired, OSError) as exc:
+        except subprocess.TimeoutExpired:
+            return ModelResult(
+                ok=False, structured=None, subtype="error_timeout",
+                error=f"timed out after {self.timeout_s}s"[:500],
+            )
+        except OSError as exc:
             return ModelResult(
                 ok=False, structured=None, subtype="error_subprocess",
                 error=str(exc)[:500],
@@ -142,7 +156,8 @@ class CliBackend:
         for _ in range(max(0, self.retries) + 1):
             result = self._attempt(req)
             attempts.append(result)
-            if result.ok or result.subtype in NO_RETRY_SUBTYPES:
+            # A usage limit holds until its reset: a retry fails the same way.
+            if result.ok or result.subtype in NO_RETRY_SUBTYPES or result_limit(result):
                 break
         last = attempts[-1]
         if len(attempts) == 1:

@@ -1,0 +1,3 @@
+[
+  {"line_start": 4, "line_end": 4, "category": "correctness", "severity": "major", "description": "hints.md tells the tutor to show the final answer, while base.md, loaded with it, says never to show the final answer; the model gets contradictory rules."}
+]

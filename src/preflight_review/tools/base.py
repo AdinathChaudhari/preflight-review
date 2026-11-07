@@ -14,6 +14,9 @@ INSTALL_HINTS = {
     "ast-grep": "brew install ast-grep",
     "gitleaks": "brew install gitleaks",
     "osv-scanner": "brew install osv-scanner",
+    "zizmor": "uv tool install zizmor",
+    "actionlint": "brew install actionlint",
+    "shellcheck": "brew install shellcheck",
 }
 
 
@@ -26,6 +29,9 @@ class ToolStatus:
     finding_count: int = 0
     note: str = ""
     duration_ms: int = 0
+    # An enabled tool that was relevant to this diff but did not give a usable result
+    # (missing, failed, unparseable output). The report says DEGRADED; the run is not failed.
+    degraded: bool = False
 
 
 def which(name: str) -> str | None:
@@ -41,7 +47,8 @@ def run(cmd: list[str], cwd: Path, timeout: int = 120) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def missing_status(name: str) -> ToolStatus:
+def missing_status(name: str, relevant: bool = True) -> ToolStatus:
+    """Status for a missing binary; degraded only when the tool had work in this diff."""
     hint = INSTALL_HINTS.get(name, f"install {name}")
     return ToolStatus(
         name=name,
@@ -49,6 +56,7 @@ def missing_status(name: str) -> ToolStatus:
         version=None,
         ran=False,
         note=f"not installed — install with `{hint}`",
+        degraded=relevant,
     )
 
 

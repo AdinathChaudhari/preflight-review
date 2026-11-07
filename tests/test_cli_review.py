@@ -107,9 +107,9 @@ def test_review_bad_base_maps_to_exit_1(repo, capsys):
 
 def test_doctor_exit_codes(repo, monkeypatch, capsys):
     ok = [Check("git", True, "ok", True), Check("ruff", False, "not installed", False)]
-    monkeypatch.setattr(doctor, "run_doctor", lambda root: ok)
+    monkeypatch.setattr(doctor, "run_doctor", lambda root, **kw: ok)
     assert cli.main(["doctor"]) == 0
     assert "git" in capsys.readouterr().out
     bad = ok + [Check("claude", False, "missing", True)]
-    monkeypatch.setattr(doctor, "run_doctor", lambda root: bad)
+    monkeypatch.setattr(doctor, "run_doctor", lambda root, **kw: bad)
     assert cli.main(["doctor"]) == 1

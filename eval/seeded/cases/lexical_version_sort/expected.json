@@ -1,0 +1,3 @@
+[
+  {"line_start": 10, "line_end": 10, "category": "correctness", "severity": "major", "description": "sorted() orders tags lexically, so 'v1.9.0' sorts after 'v1.10.0' and latest_tag returns the older release."}
+]
