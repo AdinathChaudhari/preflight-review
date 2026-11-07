@@ -10,6 +10,9 @@ from preflight_review.context.risk import TIER_RANK, risk_tier
 from preflight_review.findings import Finding, Severity, Verdict, severity_rank, to_dict
 from preflight_review.prompts import all_prompt_shas
 from preflight_review.render.agent_prompt import aggregate_prompt, agent_prompt
+from preflight_review.render.cost import cost_line
+from preflight_review.stages.verify import UNVERIFIED_NIT, is_unverified_nit
+from preflight_review.tools import degraded_label
 
 if TYPE_CHECKING:
     from preflight_review.render import RunResult
@@ -33,8 +36,10 @@ def _block(n: int, f: Finding, run: RunResult) -> str:
     for e in f.evidence:
         lines.append(f"- `{e.file}:{e.line}` `{e.quote}`")
     verdict = _enum(f.verdict) if f.verdict is not None else "UNVERIFIED"
-    if f.verdict == Verdict.SKIPPED:
-        lines.append("- Verifier: SKIPPED — deterministic tool finding")
+    if is_unverified_nit(f):
+        lines.append(f"- Verifier: {UNVERIFIED_NIT} — trivial or nitpick finding, not sent to the verifier")
+    elif f.verdict == Verdict.SKIPPED:
+        lines.append("- Verifier: SKIPPED — deterministic tool finding (tool-verified, no model vote)")
     else:
         lines.append(
             f"- Verifier: {verdict} — {f.verifier_reason or 'no reason given'}; "
@@ -89,10 +94,17 @@ def merge_risk(run: RunResult) -> tuple[str, str]:
     rep, unv = run.policy.report, run.policy.unverified
     serious = [f for f in rep if severity_rank(f.severity) >= severity_rank(Severity.major)]
     level = "high" if serious else ("medium" if rep or unv else "low")
+    nits = n_unverified_nits(rep)
     return level, (
-        f"Merge risk: {level} \u2014 {len(rep)} confirmed ({len(serious)} critical/major), "
-        f"{len(unv)} unverified."
+        f"Merge risk: {level} \u2014 {len(rep) - nits} confirmed ({len(serious)} critical/major), "
+        + (f"{nits} unverified nits, " if nits else "")
+        + f"{len(unv)} unverified."
     )
+
+
+def n_unverified_nits(findings: list[Finding]) -> int:
+    """Reported nits that skipped the verifier: not counted as confirmed."""
+    return sum(1 for f in findings if is_unverified_nit(f))
 
 
 def _merge_risk(run: RunResult) -> str:
@@ -129,7 +141,9 @@ def _walkthrough(w: dict | None, incomplete: bool = False) -> str:
 
 
 def _tool_row(t) -> str:
-    if not t.installed:
+    if t.degraded:
+        status = f"DEGRADED: {t.note}" if t.note else "DEGRADED"
+    elif not t.installed:
         status = f"not installed ({t.note})" if t.note else "not installed"
     elif not t.ran:
         status = f"skipped ({t.note})" if t.note else "skipped"
@@ -255,6 +269,68 @@ def _previous_line(sid: str, st: str, info: dict) -> str:
     return f"- {sid}: {st} — (details not recorded)"
 
 
+HEADER_CRUCIAL_CAP = 3  # crucial paths named in the report's Mode line
+
+
+def mode_line(run: RunResult) -> str:
+    """`Mode: deep (auto — crucial paths: a, b)`; an explicit mode reads `(set explicitly)`."""
+    mode = run.config.mode
+    if run.mode_requested == "menu":
+        return f"Mode: {mode} (chosen at the pre-run depth menu)"
+    if run.mode_requested != "auto":
+        return f"Mode: {mode}" + (" (set explicitly)" if run.mode_requested else "")
+    if not run.crucial_paths:
+        return f"Mode: {mode} (auto — no crucial paths changed)"
+    shown = ", ".join(run.crucial_paths[:HEADER_CRUCIAL_CAP])
+    more = len(run.crucial_paths) - HEADER_CRUCIAL_CAP
+    if more > 0:
+        shown += f", +{more} more"
+    return f"Mode: {mode} (auto — crucial paths: {shown})"
+
+
+def _not_started(run: RunResult, out: list[str]) -> str:
+    est = run.estimate
+    out += [
+        mode_line(run),
+        "Result: not started — " + "; ".join(run.incomplete_reasons),
+        "",
+        "## Not started",
+        "",
+        (
+            "No model was called and nothing was reviewed. A review is never cut short once "
+            "it starts, so a run estimated above `confirm_above_usd` asks first, and without "
+            "a terminal to ask on it does not start."
+        ),
+        "",
+    ]
+    if est is not None:
+        out += [f"Estimate: {est.describe()}.", ""]
+    if run.mode_estimates:
+        out += ["Estimate per depth:", ""]
+        out += [f"- {m}: {e.describe()}" for m, e in run.mode_estimates.items()]
+        out.append("")
+    out += ["To proceed, run one of:", "", "```sh", *run.rerun_commands, "```", ""]
+    out += [
+        (
+            "Each command runs the review at that depth without asking. On a terminal the "
+            "same choice is offered as a menu. `confirm_above_usd: null` in "
+            "`.preflight/config.yaml` turns the menu off once it is on the base branch."
+        ),
+    ]
+    if run.notes:
+        out += ["", "## Notes", "", *[f"- {n}" for n in run.notes]]
+    return "\n".join(out) + "\n"
+
+
+def paused_result_line(run: RunResult) -> str:
+    resets = f" (resets {run.limit_resets})" if run.limit_resets else ""
+    return (
+        f"Result: PAUSED \u2014 Claude usage limit reached{resets}. "
+        f"{run.calls_done} of {run.calls_total} calls done. "
+        f"Resume with: {run.resume_command or 'preflight-review review --resume'}"
+    )
+
+
 def render_report(run: RunResult) -> str:
     s, p = run.scope, run.policy
     out: list[str] = []
@@ -263,6 +339,12 @@ def render_report(run: RunResult) -> str:
         f"{s.branch or 'detached'} @ {s.head_sha[:7]}"
     )
     out.append("")
+    if run.degraded:
+        out += [
+            "> **DEGRADED:** " + "; ".join(run.degraded)
+            + ". Findings these tools would report are missing from this review.",
+            "",
+        ]
     start = (s.diff_from or s.base_sha)[:7]
     added = sum(fc.added_lines for fc in s.files)
     deleted = sum(fc.deleted_lines for fc in s.files)
@@ -276,11 +358,18 @@ def render_report(run: RunResult) -> str:
         f"{n} files, +{added}/−{deleted} lines, reviewed {len(cov.reviewed)}/{n}, "
         f"not reviewed: {nr}"
     )
+    if run.outcome == "not_started" and not run.reused:
+        return _not_started(run, out)
+    out.append(mode_line(run))
     if run.reused:
         out.append(f"Result: reused (diff unchanged since {run.previous_report})")
     else:
         result = f"Result: {run.outcome}"
-        if run.incomplete_reasons:
+        if run.outcome == "paused":
+            result = paused_result_line(run)
+        elif run.degraded:
+            result += " (DEGRADED: " + ", ".join(degraded_label(d) for d in run.degraded) + ")"
+        if run.incomplete_reasons and run.outcome != "paused":
             result += " — " + "; ".join(run.incomplete_reasons)
         out.append(result)
     out += ["", f"## Not reviewed ({k})", "", _not_reviewed_section(run, entries), "", _excluded_line(cov.excluded)]
@@ -288,15 +377,34 @@ def render_report(run: RunResult) -> str:
     out += ["", "## Walkthrough", "", _walkthrough(run.walkthrough, incomplete), "", _merge_risk(run), ""]
 
     sup_ids = " ".join(lid for _, lid in run.suppressed)
+    nits = n_unverified_nits(p.report)
     out.append(
-        f"## Findings ({len(p.report)} confirmed, {len(p.unverified)} unverified, "
+        f"## Findings ({len(p.report) - nits} confirmed, "
+        + (f"{nits} unverified nits, " if nits else "")
+        + f"{len(p.unverified)} unverified, "
         f"{len(p.pre_existing)} pre-existing hidden, {len(run.suppressed)} suppressed by learnings"
         f"{' ' + sup_ids if sup_ids else ''}, {len(p.previously_reported)} previously reported)"
     )
     out += ["", f"Dropped: {len(dropped_records(run))} (see {run.basename}.dropped.jsonl)", ""]
     out += [_blocks(p.report, 1, run), ""]
 
-    out += [f"## Unverified ({len(p.unverified)})", "", _blocks(p.unverified, len(p.report) + 1, run), ""]
+    out += [f"## Unverified ({len(p.unverified)})", ""]
+    if p.unverified:
+        # Collapsed: recall-first finders produce more UNKNOWN findings than confirmed ones.
+        out += [
+            "<details>",
+            (
+                f"<summary>{len(p.unverified)} finding(s) the verifier could not confirm or "
+                "refute (expand)</summary>"
+            ),
+            "",
+            _blocks(p.unverified, len(p.report) + 1, run),
+            "",
+            "</details>",
+            "",
+        ]
+    else:
+        out += ["none", ""]
 
     recs = dropped_records(run)
     out += [f"## Dropped ({len(recs)})", "", _dropped_section(run, recs), ""]
@@ -332,7 +440,7 @@ def render_report(run: RunResult) -> str:
     out += ["## Run", ""]
     out.append("- Models: " + (", ".join(f"{k}={v}" for k, v in run.models_used.items()) or "none"))
     out.append(f"- Model calls: {len(run.lane_results)}")
-    out.append(f"- Cost: USD {run.cost_usd:.4f}")
+    out.append("- " + cost_line(run.cost_usd, run.lane_results))
     out.append(f"- Duration: {run.duration_s:.1f}s")
     out.append(f"- Claude Code: {run.claude_code_version or 'unknown'}")
     out.append(f"- Prompts sha: {prompts_sha}")

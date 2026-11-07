@@ -7,8 +7,14 @@ from pathlib import Path
 from typing import Callable
 
 from preflight_review import gitutil
-from preflight_review.config import load_config
-from preflight_review.model.backend import claude_version
+from preflight_review.config import (
+    CONFIG_PATH,
+    Config,
+    legacy_defaults_note,
+    load_config,
+)
+from preflight_review.errors import GitError
+from preflight_review.model.backend import ModelRequest, claude_version
 from preflight_review.tools import base as tools_base
 from preflight_review.tools.base import INSTALL_HINTS, tool_version
 
@@ -29,11 +35,64 @@ def _guard(name: str, required: bool, fn: Callable[[], tuple[bool, str]]) -> Che
     return Check(name, ok, detail, required)
 
 
+PROBE_SCHEMA = {
+    "type": "object",
+    "properties": {"ok": {"type": "boolean"}},
+    "required": ["ok"],
+}
+
+
+def probe_model(alias: str, cwd: Path) -> tuple[bool, str]:
+    """One tiny `claude -p --model <alias>` call: does the alias resolve and answer here?
+
+    `claude --help` listing an alias does not mean this account or provider can call it.
+    """
+    from preflight_review.model.cli_backend import CliBackend
+
+    res = CliBackend(retries=0, timeout_s=120).run(ModelRequest(
+        role="doctor", model=alias, system_prompt="You answer environment health checks.",
+        prompt='Return {"ok": true}.', schema=PROBE_SCHEMA, cwd=cwd, tools=[], max_turns=2,
+    ))
+    if res.ok:
+        return True, f"{alias} -> {res.model or alias}"
+    return False, (res.error or res.subtype)[:200]
+
+
+def review_config(root: Path) -> tuple[Config, str]:
+    """The config `review` uses, read from the base ref the same way, and a detail line.
+
+    When the base ref has no config file (or cannot be resolved), the working-tree file is
+    checked instead and the detail says that review will not use it until it is merged.
+    """
+    base, where = Config().base, ""
+    for attempt in range(2):  # the base branch's config may name another base, as in review
+        try:
+            resolved = gitutil.resolve_ref_with_fallback(base, root)
+        except GitError:
+            where = f"cannot resolve base {base}; checked the working-tree file"
+            break
+        if gitutil.show_file(resolved, CONFIG_PATH, root) is None:
+            where = (f"not on {resolved}, so review uses defaults until it is on the base "
+                     "branch; checked the working-tree file")
+            break
+        cfg = load_config(root, base)
+        if cfg.base == base or attempt:
+            return cfg, f"{CONFIG_PATH} ok (read from {resolved}, as review reads it)"
+        base = cfg.base
+    cfg = load_config(root, None)
+    if not (root / CONFIG_PATH).exists():
+        return cfg, "not present; defaults apply"
+    return cfg, f"{CONFIG_PATH} {where}"
+
+
 def run_doctor(
     repo_root: Path,
     which: Callable[[str], str | None] = tools_base.which,
     claude_version_fn: Callable[[], str | None] = claude_version,
+    model_probe_fn: Callable[[str, Path], tuple[bool, str]] | None = None,
 ) -> list[Check]:
+    """`model_probe_fn` (e.g. probe_model) makes one real model call to check that the
+    adjudicator alias answers; None skips that check."""
     repo_root = Path(repo_root)
     state: dict = {}
 
@@ -42,11 +101,8 @@ def run_doctor(
         return True, str(state["root"])
 
     def config_check() -> tuple[bool, str]:
-        root = state.get("root", repo_root)
-        state["config"] = load_config(root, None)
-        if not (root / ".preflight" / "config.yaml").exists():
-            return True, "not present; defaults apply"
-        return True, ".preflight/config.yaml ok"
+        state["config"], detail = review_config(state.get("root", repo_root))
+        return True, detail
 
     def base_check() -> tuple[bool, str]:
         root = state["root"]
@@ -73,6 +129,23 @@ def run_doctor(
 
     cwd = state.get("root", repo_root)
 
+    cfg = state.get("config")
+    if model_probe_fn is not None and cfg is not None and checks[-1].ok:
+        alias = cfg.models.adjudicator
+        fallback = cfg.models.adjudicator_fallback
+
+        def adjudicator_check() -> tuple[bool, str]:
+            ok, detail = model_probe_fn(alias, cwd)
+            if ok or alias == fallback:
+                return ok, detail
+            return False, f"{alias} unavailable ({detail}); split votes adjudicate on {fallback}"
+
+        checks.append(_guard("adjudicator model", False, adjudicator_check))
+
+    if cfg is not None:
+        legacy = legacy_defaults_note(cfg)
+        checks.append(Check("config defaults", legacy is None, legacy or "no 1.0 defaults pinned", False))
+
     def tool_check(name: str) -> Callable[[], tuple[bool, str]]:
         def inner() -> tuple[bool, str]:
             path = which(name)
@@ -82,7 +155,9 @@ def run_doctor(
 
         return inner
 
-    for name in ("ruff", "gitleaks", "ast-grep", "osv-scanner"):
+    for name in (
+        "ruff", "gitleaks", "ast-grep", "osv-scanner", "zizmor", "actionlint", "shellcheck",
+    ):
         checks.append(_guard(name, False, tool_check(name)))
 
     def gh_check() -> tuple[bool, str]:

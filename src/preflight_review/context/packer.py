@@ -108,12 +108,13 @@ def _learnings_body(learnings: list[Learning]) -> str:
     return "\n".join(f"[{l.id}] ({l.path_glob}) {l.text}" for l in learnings)
 
 
-def _signals_body(findings: list[Finding]) -> str:
-    return "\n".join(
+def _signals_body(findings: list[Finding], candidates: list[str] | None = None) -> str:
+    lines = [
         f"{f.rule_id or f.source} {f.file}:{f.start_line} {f.title}"
         for f in findings
         if f.lane == Lane.inline
-    )
+    ]
+    return "\n".join(lines + list(candidates or []))
 
 
 def _diff_section(
@@ -368,6 +369,7 @@ def build_packet(
     diff_cap: int = 12_000,
     history: list | None = None,
     batch_note: str | None = None,
+    candidates: list[str] | None = None,
 ) -> Packet:
     mandatory = []
     if batch_note is not None:
@@ -379,7 +381,7 @@ def build_packet(
     ]
     if history:
         mandatory.append(("Prior review comments in these files", format_history_section(history)))
-    mandatory.append(("Tool signals (do not restate)", _signals_body(tool_findings)))
+    mandatory.append(("Tool signals (do not restate)", _signals_body(tool_findings, candidates)))
     sections: list[PacketSection] = []
     texts: list[str] = []
     for prio, (name, body) in enumerate(mandatory):

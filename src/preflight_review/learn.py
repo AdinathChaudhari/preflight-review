@@ -51,7 +51,6 @@ def list_learnings(repo_root: Path) -> list[Learning]:
 
 
 PROPOSE_MAX_TURNS = 2
-PROPOSE_BUDGET_USD = 0.25
 
 
 def _learnings_block(learnings: list[Learning]) -> str:
@@ -81,7 +80,6 @@ def propose_path_instructions(repo_root: Path, backend, model: str = "sonnet") -
         cwd=root,
         tools=[],
         max_turns=PROPOSE_MAX_TURNS,
-        max_budget_usd=PROPOSE_BUDGET_USD,
     )
     res = backend.run(req)
     if not res.ok or res.structured is None:

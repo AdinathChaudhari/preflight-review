@@ -13,6 +13,7 @@ Two case layouts:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -63,9 +64,26 @@ def _check_rel(d: Path, what: str, value: object) -> str:
     return value
 
 
+DOT_PREFIX = "dot_"
+
+
+def _seed_path(rel: Path) -> str:
+    """A `dot_<name>` path part is written as `.<name>`, so a seed tree can hold dotfiles
+    such as `.env.local` without this repository committing one itself. A part that maps
+    to `.`, `..` or `.git` is refused: it would escape the repo or plant a git hook."""
+    parts = [
+        "." + part[len(DOT_PREFIX):] if part.startswith(DOT_PREFIX) else part
+        for part in rel.parts
+    ]
+    for part in parts:
+        if part in (".", "..") or part.lower() == ".git":
+            raise SchemaError(f"seed path {rel.as_posix()!r} maps to forbidden part {part!r}")
+    return "/".join(parts)
+
+
 def _read_tree(root: Path) -> dict[str, str]:
     return {
-        p.relative_to(root).as_posix(): p.read_text()
+        _seed_path(p.relative_to(root)): p.read_text()
         for p in sorted(root.rglob("*")) if p.is_file()
     }
 
@@ -144,21 +162,30 @@ def load_seeded_cases(directory: Path | str) -> list[SeededCase]:
 
 
 def _git(repo: Path, *args: str) -> str:
+    """Run git isolated from the user's global and system config, so a global ignore
+    cannot drop a seeded dotfile and no global hook runs in the throwaway repo."""
     cmd = [
         "git", "-c", "user.name=preflight-eval", "-c", "user.email=eval@preflight.local",
-        "-c", "commit.gpgsign=false", *args,
+        "-c", "commit.gpgsign=false", "-c", f"core.excludesFile={os.devnull}",
+        "-c", f"core.hooksPath={os.devnull}", *args,
     ]
-    proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, env=env)
     if proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
 
 
 def _write(repo: Path, files: dict[str, str]) -> None:
+    root = repo.resolve()
     for rel, text in files.items():
         target = repo / rel
+        if not target.resolve().is_relative_to(root):
+            raise SchemaError(f"seed path {rel!r} resolves outside the seed repo")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
+        if text.startswith("#!"):  # a seed script is run as ./script, so commit it executable
+            target.chmod(0o755)
 
 
 def materialise(case: SeededCase, tmp_path: Path | str) -> Path:

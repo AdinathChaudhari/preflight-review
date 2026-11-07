@@ -16,7 +16,10 @@ from preflight_review.pipeline import ReviewOptions, run_review
 from .conftest import branch, commit, make_repo
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fake"
-EMPTY = {"findings": [], "files_read_outside_packet": []}
+EMPTY = {
+    "findings": [], "files_read_outside_packet": [],
+    "coverage": [{"file": "app/x.py", "symbol_or_hunk": "f", "inputs_considered": "none", "result": "no issue"}],
+}
 DIRS = ("app/api", "app/billing", "app/core")
 N_SMALL = 30
 BIG = "app/core/big_module.py"
@@ -87,6 +90,15 @@ def test_large_diff_is_fully_covered(big_repo):
     assert len(run.packet_shas) == run.batches
 
 
+def test_default_config_has_no_budget_and_reviews_every_batch(big_repo):
+    be = FakeBackend(default=EMPTY)
+    run, _paths = review(big_repo, be)
+    assert run.config.budget_usd is None
+    assert run.batches > 1 and run.not_reviewed == []
+    assert run.outcome == "complete", run.incomplete_reasons
+    assert be.calls and all(c.max_budget_usd is None for c in be.calls)
+
+
 def test_budget_exhaustion_marks_rest_not_reviewed(big_repo):
     be = FakeBackend(default=EMPTY)
     run, paths = review(big_repo, be, budget_usd=0.08)
@@ -150,6 +162,18 @@ def test_single_batch_keeps_plain_lane_names(small_repo):
     assert "finder:correctness" in run.lane_results
     assert not any("@b" in k for k in run.lane_results)
     assert run.reviewed_paths == ["app/service.py"]
+
+
+def test_shallow_lens_is_retried_and_noted_in_run_section(small_repo):
+    shallow = {"findings": [], "files_read_outside_packet": [], "coverage": []}
+    be = FakeBackend({"finder:correctness": shallow}, default=EMPTY)
+    run, paths = review(small_repo, be)
+    assert run.outcome == "complete"
+    assert "finder:correctness#retry" in run.lane_results
+    assert [c.role for c in be.calls].count("finder:correctness") == 2
+    note = next(n for n in run.notes if n.startswith("shallow lens: correctness"))
+    assert "retry was also shallow" in note
+    assert "- Note: shallow lens: correctness" in paths["md"].read_text()
 
 
 def test_incomplete_run_is_not_reused(big_repo):

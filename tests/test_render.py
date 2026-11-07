@@ -163,7 +163,7 @@ def test_json_keys_and_dumps(scope):
         "schema_version", "repo", "branch", "pr_label", "round", "base_sha", "head_sha", "diff_hash",
         "generated_at", "outcome", "incomplete_reasons", "scope", "findings", "unverified",
         "previously_reported", "pre_existing_count", "pre_existing", "suppressed", "dropped", "tools",
-        "walkthrough", "cost", "manifest", "merge_risk", "merge_risk_detail",
+        "walkthrough", "cost", "manifest", "merge_risk", "merge_risk_detail", "degraded",
     }
     json.dumps(d)
     assert d["findings"][0]["agent_prompt"].startswith(PREAMBLE)
@@ -287,3 +287,25 @@ def test_previously_reported_details(scope):
     pr = render_json(run)["previously_reported"]
     assert pr[0] == {"stable_id": "k1", "status": "open", "title": "Race", "file": "app/x.py", "line": 12}
     assert pr[1] == {"stable_id": "k2", "status": "dismissed", "title": None, "file": None, "line": None}
+
+
+def test_degraded_banner_and_tool_row(scope):
+    st = ToolStatus("ruff", False, None, False, note="not installed", degraded=True)
+    run = _run(scope, tool_statuses=[st], degraded=["ruff: not installed"])
+    md = render_report(run)
+    assert "> **DEGRADED:** ruff: not installed." in md
+    assert "Result: complete (DEGRADED: ruff)" in md
+    assert "| ruff | - | DEGRADED: not installed | 0 |" in md
+    assert render_json(run)["degraded"] == ["ruff: not installed"]
+    clean = render_report(_run(scope))
+    assert "DEGRADED" not in clean and "Result: complete\n" in clean
+
+
+def test_unverified_section_collapsed(scope):
+    md = render_report(_run(scope))
+    sec = md[md.index("## Unverified (1)"):md.index("## Dropped (")]
+    assert "<details>" in sec and "</details>" in sec
+    assert sec.index("<summary>1 finding(s)") < sec.index("Title: Maybe") < sec.index("</details>")
+    empty = render_report(_run(scope, policy=PolicyResult()))
+    sec = empty[empty.index("## Unverified (0)"):empty.index("## Dropped (")]
+    assert "<details>" not in sec and "none" in sec

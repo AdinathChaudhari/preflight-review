@@ -1,5 +1,4 @@
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -13,7 +12,7 @@ from preflight_review.init_templates import (
     init_repo,
 )
 
-from tests.conftest import make_repo
+from tests.conftest import _git, make_repo
 
 
 def _fake_which(name):
@@ -57,7 +56,7 @@ def test_force_overwrites(tmp_path):
 
 def test_coderabbit_import(tmp_path):
     cr = (
-        "reviews:\n  profile: assertive\n  path_filters:\n    - '!**/gen/**'\n"
+        "reviews:\n  profile: chill\n  path_filters:\n    - '!**/gen/**'\n"
         "  path_instructions:\n    - path: 'migrations/**'\n      instructions: 'Check reversibility'\n"
     )
     repo = make_repo(tmp_path, {"a.py": "x = 1\n", ".coderabbit.yaml": cr})
@@ -66,7 +65,7 @@ def test_coderabbit_import(tmp_path):
     text = (repo / ".preflight" / "config.yaml").read_text()
     assert text.startswith("# preflight-review config (imported from .coderabbit.yaml)")
     cfg = load_config(repo, None)
-    assert cfg.profile == "assertive"
+    assert cfg.profile == "assertive"  # CodeRabbit's profile is not imported
     assert cfg.path_filters == ["!**/gen/**"]
     assert cfg.path_instructions[0].path == "migrations/**"
     assert cfg.path_instructions[0].instructions == "Check reversibility"
@@ -98,6 +97,47 @@ def test_doctor_ok_with_missing_optional(tmp_path):
     assert "[--] ruff: not installed (install: uv tool install ruff)" in out
 
 
+def test_doctor_skips_model_probe_by_default(tmp_path):
+    repo = make_repo(tmp_path, {"a.py": "x = 1\n"})
+    checks = run_doctor(repo, which=_fake_which, claude_version_fn=lambda: "2.1.314")
+    assert "adjudicator model" not in {c.name for c in checks}
+
+
+def test_doctor_probes_adjudicator_alias(tmp_path):
+    repo = make_repo(tmp_path, {"a.py": "x = 1\n"})
+    seen = []
+
+    def probe(alias, cwd):
+        seen.append(alias)
+        return True, f"{alias} -> claude-fable-x"
+
+    checks = run_doctor(repo, which=_fake_which, claude_version_fn=lambda: "2.1.314",
+                        model_probe_fn=probe)
+    by = {c.name: c for c in checks}
+    assert seen == ["opus"] and by["adjudicator model"].ok
+    assert not by["adjudicator model"].required
+
+
+def test_doctor_unavailable_adjudicator_is_optional_and_names_fallback(tmp_path):
+    repo = make_repo(tmp_path, {
+        "a.py": "x = 1\n", ".preflight/config.yaml": "version: 1\nmodels:\n  adjudicator: fable\n",
+    })
+    checks = run_doctor(repo, which=_fake_which, claude_version_fn=lambda: "2.1.314",
+                        model_probe_fn=lambda alias, cwd: (False, "model not found"))
+    by = {c.name: c for c in checks}
+    assert not by["adjudicator model"].ok and doctor_ok(checks)
+    assert by["adjudicator model"].detail == (
+        "fable unavailable (model not found); split votes adjudicate on opus"
+    )
+
+
+def test_doctor_no_model_probe_without_claude(tmp_path):
+    repo = make_repo(tmp_path, {"a.py": "x = 1\n"})
+    checks = run_doctor(repo, which=_fake_which, claude_version_fn=lambda: None,
+                        model_probe_fn=lambda alias, cwd: (True, "x"))
+    assert "adjudicator model" not in {c.name for c in checks}
+
+
 def test_doctor_claude_missing(tmp_path):
     repo = make_repo(tmp_path, {"a.py": "x = 1\n"})
     checks = run_doctor(repo, which=_fake_which, claude_version_fn=lambda: None)
@@ -124,16 +164,37 @@ def test_doctor_not_a_repo(tmp_path):
 @pytest.mark.skipif(shutil.which("claude") is None, reason="claude not installed")
 def test_doctor_real_machine():
     repo = Path(__file__).resolve().parent.parent
-    if (
-        shutil.which("git") is None
-        or subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--verify", "main"],
-            capture_output=True,
-        ).returncode
-        != 0
-    ):
-        pytest.skip("not a git checkout with a resolvable main")
     checks = run_doctor(repo)
     for c in checks:
         if c.required:
             assert c.ok, f"{c.name}: {c.detail}"
+
+
+def test_rules_template_has_stale_doc_and_rerun_rules():
+    from preflight_review.init_templates import RULES_MD
+
+    assert "removes or renames" in RULES_MD and "changed docs" in RULES_MD
+    assert "preflight-review review --incremental" in RULES_MD
+
+
+def test_doctor_reads_config_from_base_branch(tmp_path):
+    # review reads .preflight/config.yaml from the base branch; doctor checks the same file.
+    repo = make_repo(tmp_path, {"a.py": "x = 1\n",
+                                ".preflight/config.yaml": "version: 1\nprofile: chill\n"})
+    _git(repo, "checkout", "-q", "-b", "feat")
+    (repo / ".preflight" / "config.yaml").write_text("version: 1\nprofile: assertive\n")
+    by = {c.name: c for c in run_doctor(repo, which=_fake_which, claude_version_fn=lambda: "1")}
+    assert by["config"].ok
+    assert by["config"].detail == ".preflight/config.yaml ok (read from main, as review reads it)"
+    assert "profile: chill" in by["config defaults"].detail
+
+
+def test_doctor_falls_back_to_working_tree_config_with_note(tmp_path):
+    repo = make_repo(tmp_path, {"a.py": "x = 1\n"})
+    (repo / ".preflight").mkdir()
+    (repo / ".preflight" / "config.yaml").write_text("version: 1\nprofile: chill\n")
+    by = {c.name: c for c in run_doctor(repo, which=_fake_which, claude_version_fn=lambda: "1")}
+    assert by["config"].ok
+    assert by["config"].detail.startswith(".preflight/config.yaml not on main, so review uses")
+    assert "working-tree file" in by["config"].detail
+    assert "profile: chill" in by["config defaults"].detail

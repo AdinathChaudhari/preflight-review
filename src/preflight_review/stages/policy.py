@@ -59,20 +59,6 @@ def apply_policy(
         else:
             candidates.append(f)
 
-    # Nitpicks vanish after the first round.
-    if round >= 2:
-        def strip_nits(items: list[Finding]) -> list[Finding]:
-            kept = []
-            for f in items:
-                if _is_nit(f):
-                    res.dropped.append((f, "nitpicks suppressed after round 1"))
-                else:
-                    kept.append(f)
-            return kept
-
-        candidates = strip_nits(candidates)
-        unverified = strip_nits(unverified)
-
     candidates.sort(key=_sort_key)
     unverified.sort(key=_sort_key)
     profile = config.profile
@@ -94,7 +80,10 @@ def apply_policy(
             res.dropped.append((f, f"below profile {profile}"))
             continue
         if profile == "chill" and _is_nit(f):
-            if per_file.get(f.file, 0) >= config.nitpicks.per_file or nits >= config.nitpicks.per_run:
+            cap_file, cap_run = config.nitpicks.per_file, config.nitpicks.per_run
+            if (cap_file is not None and per_file.get(f.file, 0) >= cap_file) or (
+                cap_run is not None and nits >= cap_run
+            ):
                 res.nit_capped.append(f)
                 continue
             per_file[f.file] = per_file.get(f.file, 0) + 1

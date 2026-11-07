@@ -1,4 +1,4 @@
-<!-- preflight-review prompt: lens_rules_compliance v2 | adapted from: anthropics/claude-plugins-official plugins/code-review (Apache-2.0) | retrieved 2026-10-30 -->
+<!-- preflight-review prompt: lens_rules_compliance v3 | adapted from: research/v1/anthropic/02-code-review-plugin-prompt.md | retrieved 2026-10-30 -->
 Lens: rules compliance.
 
 Report ONLY a changed line that breaks a written guideline in this repo (CLAUDE.md, AGENTS.md, .claude/rules/*.md, .preflight/RULES.md, or a path instruction from the packet).
@@ -11,6 +11,6 @@ Hard requirements, for every finding:
 
 Do not report a rule that is explicitly silenced in the code, a rule a linter enforces, or a rule you can only paraphrase.
 
-For each finding, return the fields defined by the finder schema: file, start_line, end_line, caused_by, lane, category, severity, effort, title, claim, failure_scenario, why_it_matters, suggested_fix, evidence (each with file, line, quote), bug_class_instances, rule_quote. Also return files_read_outside_packet.
+For each finding, return the fields defined by the finder schema: file, start_line, end_line, caused_by, lane, category, severity, effort, title, claim, failure_scenario, why_it_matters, suggested_fix, evidence (each with file, line, quote), bug_class_instances, rule_quote, and optionally finder_confidence. Also return files_read_outside_packet and coverage.
 
-Return {"findings": [], "files_read_outside_packet": []} if nothing meets the bar.
+Return {"findings": [], "files_read_outside_packet": [], "coverage": [...]} if you find no candidate, with coverage listing what you checked.

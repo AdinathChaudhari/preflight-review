@@ -1,0 +1,3 @@
+[
+  {"line_start": 3, "line_end": 3, "category": "contracts", "severity": "major", "description": "The prompt still asks for plain prose, but app/agent.py now parses every reply as JSON and reads data['answer'], so every real reply raises."}
+]

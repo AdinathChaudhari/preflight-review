@@ -1,0 +1,3 @@
+[
+  {"line_start": 4, "line_end": 4, "category": "correctness", "severity": "major", "description": "Without set -o pipefail the pipeline's status is tee's, so a failed git push does not stop the script under set -e and it prints 'published'."}
+]

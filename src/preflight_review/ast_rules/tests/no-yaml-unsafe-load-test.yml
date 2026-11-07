@@ -8,3 +8,4 @@ invalid:
   - yaml.load(text)
   - yaml.load(text, Loader=yaml.FullLoader)
   - yaml.load(text, yaml.Loader)
+  - yaml.load(f(Loader=yaml.SafeLoader))

@@ -58,7 +58,7 @@ def repo(tmp_path):
 
 @pytest.fixture
 def ctx(repo):
-    config = Config()
+    config = Config(mode="deep")
     scope = resolve_scope(repo, "main")
     index = RepoIndex(repo, cache=False)
     packet = SimpleNamespace(text="PACKET TEXT")
@@ -98,7 +98,8 @@ def test_traced_finding_kept(ctx):
     assert len(f.trace) == 2 and f.confidence == 0.92
     assert "OR 1=1" in f.failure_scenario  # exploit_scenario mapped, no SchemaError
     assert be.calls[0].role == "security" and be.calls[0].model == ctx[0].models.security
-    assert be.calls[0].max_turns == 8
+    assert be.calls[0].max_turns == 18 and be.calls[0].effort == "high"  # default mode deep
+    assert be.calls[0].max_budget_usd is None
 
 
 def test_deep_mode_turns(ctx):
@@ -106,7 +107,12 @@ def test_deep_mode_turns(ctx):
     config.mode = "deep"
     be = FakeBackend({"security": {"findings": [], "files_read_outside_packet": []}})
     run_security_lane(packet, config, be, scope, "SYS", index)
-    assert be.calls[0].max_turns == 12
+    assert be.calls[0].max_turns == 18
+    config.mode, config.budget_usd = "standard", 1.5
+    be = FakeBackend({"security": {"findings": [], "files_read_outside_packet": []}})
+    run_security_lane(packet, config, be, scope, "SYS", index)
+    assert be.calls[0].max_turns == 8 and be.calls[0].effort == "medium"
+    assert be.calls[0].max_budget_usd == pytest.approx(0.5)
 
 
 @pytest.mark.parametrize(
@@ -133,7 +139,7 @@ def _write(d: Path, data: dict) -> Path:
 
 def test_prompts_render():
     text = prompts.render("security")
-    assert "MINIMIZE FALSE POSITIVES: Only flag issues where you're >80% confident of actual exploitability" in text
+    assert "Medium-confidence is fine — a separate adjudication pass will filter; your job is RECALL" in text
     assert "pickle.loads" in text and "{{" not in text
     raw = prompts.load_prompt("verifier_security")
     assert raw.count("HARD EXCLUSIONS") == 1
@@ -142,13 +148,13 @@ def test_prompts_render():
         prompts.render("verifier_security")
 
 
-def test_verifier_routes_security_to_opus(ctx, repo):
+def test_verifier_routes_security_to_sonnet(ctx, repo):
     config, scope, index, packet = ctx
     out, _ = lane(ctx, [raw_finding()])
     be = FakeBackend({"verifier:security": fixture_data()["verifier:security"]})
     vout = run_verifier(out.findings, packet, config, be, scope, VerdictCache(repo), "SYS")
     call = be.calls[0]
-    assert call.role == "verifier:security" and call.model == config.models.verifier_major
+    assert call.role == "verifier:security" and call.model == config.models.verifier == "sonnet"
     assert vout.findings[0].verdict == Verdict.CONFIRMED
 
 
@@ -196,3 +202,36 @@ def test_security_lane_suffix_and_system_packet(ctx):
     out = run_security_lane(packet, config, be, scope, "SYS", index, lane_suffix="@b2")
     assert set(out.lane_results) == {"security@b2"} and be.calls[0].role == "security"
     assert "PACKET TEXT" in be.calls[0].system_prompt and "PACKET TEXT" not in be.calls[0].prompt
+
+
+def test_security_verifier_overrides_keep_refuted_classes():
+    text = prompts.load_prompt("verifier_security")
+    over = text.index("OVERRIDES - these take precedence")
+    assert over < text.index("Apply the filtering above")
+    for needle in ("Committed secret or environment files", "(E2)", "P3 (environment",
+                   "E14 covers", "Wildcard CORS with credentials", "(E7)",
+                   "CI, deploy and cluster trust boundaries", "precedents P7 and P12",
+                   "Exclusions E6 and E17", "lifts only E6, E17, P7 and P12, not E7",
+                   "Credentials inside logged URLs", "P1 (\"logging"):
+        assert needle in text[over:], needle
+    head = text[:over]  # exclusions and precedents carry distinct labels, so "7" is never ambiguous
+    assert "> E7. A lack of hardening" in head and "> P7. Most vulnerabilities in github" in head
+    assert "> E17. Insecure documentation" in head and "> 16." not in head
+    finder = prompts.load_prompt("security")
+    assert "does not cover files committed to the repository" in finder
+    assert "together with credentials" in finder
+
+
+@pytest.mark.parametrize("conf", ["9", 9.0])
+def test_string_or_float_confidence_survives_vote_aggregation(ctx, repo, conf):
+    from preflight_review.stages.verify import aggregate, score_vote
+
+    out, _ = lane(ctx, [raw_finding()])
+    f = out.findings[0]
+    resp = fixture_data()["verifier:security"]
+    resp["confidence_10"] = conf
+    vote = score_vote(f, resp)
+    assert vote.verdict == Verdict.CONFIRMED and vote.confidence_10 == 9
+    agg = aggregate(f, vote.verdict, [vote], vote.reason)
+    assert agg["confidence_10"] == 9
+    assert score_vote(f, agg).verdict == Verdict.CONFIRMED  # re-scored aggregate holds

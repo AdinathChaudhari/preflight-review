@@ -1,0 +1,3 @@
+[
+  {"line_start": 12, "line_end": 14, "category": "data_integrity", "severity": "major", "description": "When DEFAULT_TENANT is unset, upgrade returns without the backfill but Alembic still stamps revision 0002, so the backfill never runs on a later deploy."}
+]

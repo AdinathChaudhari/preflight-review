@@ -1,0 +1,3 @@
+[
+  {"line_start": 7, "line_end": 9, "category": "correctness", "severity": "major", "description": "subprocess.run is called without check=True and its returncode is never read, so verify_release returns True when the smoke test fails."}
+]

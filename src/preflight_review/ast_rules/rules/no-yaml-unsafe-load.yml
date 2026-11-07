@@ -6,6 +6,7 @@ rule:
   pattern: yaml.load($$$ARGS)
   not:
     has:
-      kind: keyword_argument
-      stopBy: end
-      regex: "^Loader\\s*=\\s*(yaml\\.)?(C?SafeLoader)$"
+      field: arguments
+      has:
+        kind: keyword_argument
+        regex: "^Loader\\s*=\\s*(yaml\\.)?(C?SafeLoader)$"

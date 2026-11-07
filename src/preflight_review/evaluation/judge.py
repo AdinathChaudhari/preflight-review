@@ -37,7 +37,6 @@ def _ask(backend, model: str, g: GoldenItem, f: Finding, cwd: Path) -> bool | No
         cwd=Path(cwd),
         tools=[],
         max_turns=1,
-        max_budget_usd=0.05,
     )
     try:
         res = backend.run(req)

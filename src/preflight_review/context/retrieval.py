@@ -83,7 +83,10 @@ def _flat(text: str, limit: int) -> str:
     return one if len(one) <= limit else one[: limit - 3] + "..."
 
 
-def rerank_with_model(docs: list[Doc], query: str, backend, model: str, cap: int, cwd) -> list[Doc]:
+def rerank_with_model(
+    docs: list[Doc], query: str, backend, model: str, cap: int, cwd,
+    max_budget_usd: float | None = None,
+) -> list[Doc]:
     fallback = docs[:cap]
     try:
         from preflight_review import prompts
@@ -100,7 +103,7 @@ def rerank_with_model(docs: list[Doc], query: str, backend, model: str, cap: int
             cwd=Path(cwd),
             tools=[],
             max_turns=2,
-            max_budget_usd=0.05,
+            max_budget_usd=max_budget_usd,
         )
         res = backend.run(req)
         if not res.ok or not isinstance(res.structured, dict):
