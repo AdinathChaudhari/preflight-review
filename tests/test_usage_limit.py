@@ -148,13 +148,21 @@ def test_breaker_lets_in_flight_calls_finish():
 # --- pipeline -------------------------------------------------------------
 
 
+# Committed on the base branch: config is read from the base ref, so a worktree-only file
+# would be ignored. One call in flight (BreakerBackend's gate) makes the call sequence exact:
+# with several in flight, calls that start before the limited one returns still reach the
+# model (they started before the trip), so an exact count would depend on thread timing.
+# No Haiku triage, so the counts do not depend on how triage batches its calls.
+LIMIT_CONFIG = "concurrency: 1\ncache_warm_seconds: 0\ntriage:\n  haiku: false\n"
+
+
 @pytest.fixture
 def repo(tmp_path):
-    r = make_repo(tmp_path, {"app/service.py": SERVICE_BASE, "README.md": "hi\n"})
+    r = make_repo(tmp_path, {
+        "app/service.py": SERVICE_BASE, "README.md": "hi\n", ".preflight/config.yaml": LIMIT_CONFIG,
+    })
     branch(r, "feature/x")
     commit(r, {"app/service.py": SERVICE_BAD}, "change service")
-    (r / ".preflight").mkdir(exist_ok=True)
-    (r / ".preflight" / "config.yaml").write_text("concurrency: 1\ncache_warm_seconds: 0\n")
     return r
 
 

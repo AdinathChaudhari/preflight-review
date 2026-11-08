@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import replace
 from typing import Callable
 
@@ -42,8 +43,12 @@ def _parse_stdout(stdout: str) -> dict | None:
 # A retry with the same budget, turn or time cap hits the cap again and just spends it twice.
 NO_RETRY_SUBTYPES = frozenset({"error_max_budget_usd", "error_max_turns", "error_timeout"})
 
-# Deep Opus calls at high effort can run for tens of minutes; a timeout fails the lane.
-DEFAULT_TIMEOUT_S = 3600
+# A Sonnet lane past 25 minutes is hung; a timeout fails the lane (reported as not reviewed).
+DEFAULT_TIMEOUT_S = 1500
+
+# Waits before each retry of a transient rate limit (HTTP 429): it clears within a minute.
+# The account's usage limit is never retried (it holds until its reset).
+TRANSIENT_LIMIT_WAITS_S = (20, 60)
 
 
 class CliBackend:
@@ -55,11 +60,13 @@ class CliBackend:
         runner: Callable = subprocess.run,
         retries: int = 1,
         timeout_s: int = DEFAULT_TIMEOUT_S,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.claude_bin = claude_bin
         self.runner = runner
         self.retries = retries
         self.timeout_s = timeout_s
+        self.sleep = sleep
 
     def build_argv(self, req: ModelRequest) -> list[str]:
         argv = [
@@ -153,12 +160,25 @@ class CliBackend:
 
     def run(self, req: ModelRequest) -> ModelResult:
         attempts: list[ModelResult] = []
-        for _ in range(max(0, self.retries) + 1):
+        retries_left = max(0, self.retries)
+        waits = list(TRANSIENT_LIMIT_WAITS_S)
+        while True:
             result = self._attempt(req)
             attempts.append(result)
-            # A usage limit holds until its reset: a retry fails the same way.
-            if result.ok or result.subtype in NO_RETRY_SUBTYPES or result_limit(result):
+            if result.ok or result.subtype in NO_RETRY_SUBTYPES:
                 break
+            limit = result_limit(result)
+            if limit is not None:
+                # A usage limit holds until its reset: a retry fails the same way. A 429 rate
+                # limit clears in a minute: wait and retry (a separate allowance from
+                # `retries`). One that survives the waits trips the breaker.
+                if limit.transient and waits:
+                    self.sleep(waits.pop(0))
+                    continue
+                break
+            if retries_left <= 0:
+                break
+            retries_left -= 1
         last = attempts[-1]
         if len(attempts) == 1:
             return last

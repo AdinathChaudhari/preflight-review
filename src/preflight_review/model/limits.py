@@ -36,6 +36,9 @@ _LIMIT_RES = [
     re.compile(r"\b429\s+too many requests\b", re.IGNORECASE),
 ]
 _OVERLOADED = re.compile(r"overloaded", re.IGNORECASE)
+# The account's own usage limit ("hit your 5-hour limit", "usage limit reached"): it holds
+# until the reset. Anything else that matches _LIMIT_RES is a per-minute rate limit (429).
+_HARD_LIMIT = re.compile(r"\bhit your\b[^\n]{0,40}\blimit\b|\busage[ _-]limit", re.IGNORECASE)
 _RESET = re.compile(r"\bresets?\s+(?:at\s+)?([^\n·|]+)", re.IGNORECASE)
 
 
@@ -43,6 +46,9 @@ _RESET = re.compile(r"\bresets?\s+(?:at\s+)?([^\n·|]+)", re.IGNORECASE)
 class UsageLimit:
     message: str
     resets: str | None = None
+    # A per-minute rate limit (HTTP 429, rate_limit_error), not the account's usage limit:
+    # it clears within a minute, so the CLI backend waits and retries it before giving up.
+    transient: bool = False
 
 
 def classify_limit(text: str | None) -> UsageLimit | None:
@@ -55,7 +61,10 @@ def classify_limit(text: str | None) -> UsageLimit | None:
         return None
     m = _RESET.search(text)
     resets = m.group(1).strip().rstrip(".").strip() if m else None
-    return UsageLimit(message=text.strip()[:200], resets=resets or None)
+    return UsageLimit(
+        message=text.strip()[:200], resets=resets or None,
+        transient=_HARD_LIMIT.search(text) is None,
+    )
 
 
 def result_limit(res: ModelResult) -> UsageLimit | None:
@@ -69,7 +78,11 @@ def result_limit(res: ModelResult) -> UsageLimit | None:
         return None
     raw = res.raw if isinstance(res.raw, dict) else {}
     if raw.get("api_error_status") == 429:
-        return classify_limit(str(raw.get("result") or "HTTP 429")) or UsageLimit("HTTP 429")
+        text = str(raw.get("result") or "HTTP 429")
+        hit = classify_limit(text)
+        if hit is None:
+            return UsageLimit("HTTP 429", transient=_HARD_LIMIT.search(text) is None)
+        return hit
     if raw.get("subtype") == "success" and not raw.get("is_error"):
         return None
     for text in (res.error, raw.get("result"), raw.get("error")):
@@ -103,12 +116,18 @@ class BreakerBackend:
 
     In-flight calls finish normally; calls started after the trip are skipped. Thread-safe:
     stages call `run` from thread pools.
+
+    `max_inflight` caps the model calls running at once across every stage and packet (one
+    global limit, so parallel packets cannot multiply the concurrency). None: no cap.
     """
 
-    def __init__(self, inner, cached: dict[str, list[dict]] | None = None) -> None:
+    def __init__(
+        self, inner, cached: dict[str, list[dict]] | None = None, max_inflight: int | None = None
+    ) -> None:
         self.inner = inner
         self.name = getattr(inner, "name", "")
         self._lock = threading.Lock()
+        self._gate = threading.BoundedSemaphore(max_inflight) if max_inflight else None
         self._cached = {k: list(v) for k, v in (cached or {}).items()}
         self.limit: UsageLimit | None = None
         self.done = 0  # calls that reached the model
@@ -136,7 +155,17 @@ class BreakerBackend:
             if self.limit is not None:
                 self.skipped += 1
                 return paused_result(req)
-        res = self.inner.run(req)
+        if self._gate is None:
+            res = self.inner.run(req)
+        else:
+            with self._gate:
+                # The breaker may have tripped while this call waited for a slot: a call
+                # never starts after the trip.
+                with self._lock:
+                    if self.limit is not None:
+                        self.skipped += 1
+                        return paused_result(req)
+                res = self.inner.run(req)
         hit = result_limit(res)
         with self._lock:
             self.done += 1

@@ -81,3 +81,11 @@ def test_shas_change_when_bytes_change(monkeypatch):
 def test_adapted_from_in_system_and_verifier():
     for n in ("system", "verifier"):
         assert "adapted from: research/v1/anthropic/02-code-review-plugin-prompt.md" in load_prompt(n).splitlines()[0]
+
+
+def test_triage_batch_renders_with_files_slot():
+    out = render("triage_batch", files="### a.py\n```diff\n+x\n```")
+    assert "### a.py" in out and "{{" not in out and "NEEDS_REVIEW" in out
+    with pytest.raises(SchemaError, match="files"):
+        render("triage_batch")
+    assert "triage" in PROMPT_NAMES and "triage_batch" in PROMPT_NAMES

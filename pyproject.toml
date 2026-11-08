@@ -1,6 +1,6 @@
 [project]
 name = "preflight-review"
-version = "1.1.0"
+version = "1.2.0"
 description = "Local pre-push AI code reviewer that writes a report for agents to work on."
 readme = "README.md"
 requires-python = ">=3.11"

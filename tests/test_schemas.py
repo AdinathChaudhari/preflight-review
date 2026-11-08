@@ -60,3 +60,13 @@ def test_unknown_name():
         load_schema("nope")
     with pytest.raises(SchemaError):
         schema_sha("nope")
+
+
+def test_triage_batch_sample_validates():
+    jsonschema = pytest.importorskip("jsonschema")
+    s = load_schema("triage_batch")
+    jsonschema.validate({"decisions": [{"path": "a.py", "decision": "APPROVED", "reason": "typo"}]}, s)
+    for bad in ({}, {"decisions": [{"path": "a.py", "decision": "MAYBE", "reason": "x"}]},
+                {"decisions": [{"path": "a.py", "decision": "APPROVED"}]}):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(bad, s)
