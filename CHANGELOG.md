@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — 2026-11-08
+Fast by not repeating work. 1.1 removed the 1.0 caps (the 1.0 speed came mostly from `budget_usd: 1.50` stopping a run after 2-3 packets), but kept 1.0's serial packet loop and full-branch re-review, so a large branch (~70 packets) estimated ~383 min. 1.2 keeps 1.1's coverage and models and removes the repeated and serial work. No real-model runs were made, so speed and cost figures are estimates until measured.
+
+- Incremental by default, via a reviewed-file cache (`reviewed_cache.py`, `.preflight/` state). Each reviewed file change is keyed by path, status, old blob and new blob, plus a fingerprint of depth, the lenses that apply to it, the security lane and its guideline text. The next run reviews only file changes not seen before, so a new commit, a rebase or a merge of main re-reviews only what changed. A cached file is reviewed again when a file holding a caller or callee of its changed symbols, or a co-change companion, is reviewed fresh. Cache hits also require every finding id stored with the entry to be tracked in this branch's state, and open findings on cached files carry forward. Nothing is written to the cache from a paused run, a tripped backend, or a run with any verifier failure; files in a packet with a failed lane are never cached. The report lists cached files under "Reviewed earlier". `--full` skips reading the cache (it still writes it); `--incremental` is kept as a no-op. If every changed file was reviewed before, no model call is made.
+- Packets run in parallel under one in-flight cap (`concurrency`, default now 10; a `BoundedSemaphore` in the breaker backend), and each packet is verified as soon as its own finders finish, while its packet is still in the prompt cache. The usage-limit breaker re-checks after a call gets a slot, so no call starts after a trip. A transient rate limit (429 without "usage limit") waits 20 s then 60 s and retries before pausing. With `budget_usd` or `verifier.cap` set, the serial loop and whole-run verification of 1.1 are used, so caps keep their meaning. Report and JSON output are identical between concurrency 1 and 8 (test fixture `tests/fixtures/parallel_baseline/`).
+- Depth per packet: under `mode: auto` only packets holding a crucial path run deep; the rest run standard. The sweep runs only when a deep packet exists and sees only deep packets' files. The menu offers quick / standard / deep / auto.
+- Bigger packets by depth: `packet_tokens: {quick: 32000, standard: 24000, deep: 16000}` (was 12000 for every depth), so a large diff makes 1.5-2.5x fewer packets, each paying the lens and security calls once.
+- Haiku triage is batched: up to 20 files or 60k characters per call, groups run in parallel (was one serial call per file).
+- `call_timeout_s` default 1500 (was 3600): a lane past 25 min is hung.
+- Estimator refit for Sonnet wall time and parallel packets; the estimate covers only files not served from the cache. The report shows estimate vs actual.
+- Config drift note: when the worktree `.preflight/config.yaml` differs from the base branch's, the run says which keys are ignored.
+- Fixes: `test_limit_mid_run_pauses_and_stops_calls` was timing-dependent (its config was written to the worktree, which is never read); a finding whose votes came back paused no longer requests another vote. Thread safety: locks on the fake backend, symbol index and verdict cache.
+- Tests: 1133 passed, 2 skipped (main before: 983 passed, 1 failed).
+
 ## 1.1.0 — 2026-11-06
 Thorough by coverage, lean by model. 1.1 started as "exhaustive review over cost" ; on 2026-11-07 the cost defaults were replaced by the lean ones below (decision 15) after a 74-file incremental deep run planned 1214 model calls (~$30) and hit the 5-hour usage limit: 773 of its 835 completed calls were Opus security votes on ruff `S` findings such as S101 in tests, 3 votes each, and auto mode went deep only because eval fixtures contained migration files.
 

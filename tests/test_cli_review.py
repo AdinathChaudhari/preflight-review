@@ -113,3 +113,19 @@ def test_doctor_exit_codes(repo, monkeypatch, capsys):
     bad = ok + [Check("claude", False, "missing", True)]
     monkeypatch.setattr(doctor, "run_doctor", lambda root, **kw: bad)
     assert cli.main(["doctor"]) == 1
+
+
+def test_incremental_flag_is_accepted_as_a_no_op(repo, capsys):
+    assert cli.main(["review", "--backend", "fake", "--base", "main", "--incremental"]) == 0
+    commit(repo, {"app/other.py": "x = 1\n"}, "add other")
+    assert cli.main(["review", "--backend", "fake", "--base", "main", "--incremental"]) == 0
+    out = capsys.readouterr().out.strip().splitlines()[-1]
+    assert out.startswith("preflight: ") and "(1 file reviewed earlier)" in out
+
+
+def test_full_and_incremental_help_describe_the_cache(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["review", "--help"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert "ignoring the reviewed-file cache" in out
+    assert "only file changes not reviewed before are reviewed" in out

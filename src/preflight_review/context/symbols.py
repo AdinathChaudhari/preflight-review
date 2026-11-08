@@ -6,6 +6,7 @@ import ast
 import json
 import os
 import tempfile
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -170,12 +171,19 @@ class RepoIndex:
         self._memo: dict[str, FileIndex] = {}
         self._entries: dict[str, dict] | None = None  # loaded cache entries
         self._dirty = False
+        # Packets are reviewed in parallel: finder threads resolve enclosing symbols while
+        # other threads parse. One re-entrant lock guards the memo, the cache and the counter.
+        self._lock = threading.RLock()
 
     @property
     def cache_path(self) -> Path:
         return self.repo_root / ".preflight" / "cache" / "ast-index.json"
 
     def _load_entries(self) -> dict[str, dict]:
+        with self._lock:
+            return self._load_entries_locked()
+
+    def _load_entries_locked(self) -> dict[str, dict]:
         if self._entries is not None:
             return self._entries
         entries: dict[str, dict] = {}
@@ -192,6 +200,10 @@ class RepoIndex:
         return entries
 
     def get(self, path: str) -> FileIndex:
+        with self._lock:
+            return self._get_locked(path)
+
+    def _get_locked(self, path: str) -> FileIndex:
         if path in self._memo:
             return self._memo[path]
         full = self.repo_root / path
@@ -231,10 +243,15 @@ class RepoIndex:
 
     def index_text(self, path: str, text: str) -> FileIndex:
         """Index non-worktree text (e.g. old_text). Never cached."""
-        return self._parse(path, text)
+        with self._lock:
+            return self._parse(path, text)
 
     def save(self) -> None:
         """Atomically write the cache if anything changed."""
+        with self._lock:
+            self._save_locked()
+
+    def _save_locked(self) -> None:
         if not self.cache or not self._dirty or self._entries is None:
             return
         target = self.cache_path
@@ -270,8 +287,10 @@ class RepoIndex:
         return out
 
     def enclosing_symbol(self, path: str, line: int) -> Symbol | None:
+        with self._lock:
+            symbols = list(self.get(path).symbols)
         best: Symbol | None = None
-        for s in self.get(path).symbols:
+        for s in symbols:
             if s.start_line <= line <= s.end_line:
                 if best is None or (s.end_line - s.start_line, -s.start_line) <= (
                     best.end_line - best.start_line,

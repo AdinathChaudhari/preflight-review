@@ -200,14 +200,7 @@ def cluster(findings: list[Finding]) -> list[Finding]:
     parent = list(range(n))
     for i in range(n):
         for j in range(i + 1, n):
-            a, b = findings[i], findings[j]
-            if (
-                a.file == b.file
-                and COARSE[a.category] == COARSE[b.category]
-                and _overlap(a, b)
-                and a.source not in UNMERGED_SOURCES
-                and b.source not in UNMERGED_SOURCES
-            ):
+            if _mergeable(findings[i], findings[j]):
                 parent[_find(parent, j)] = _find(parent, i)
     groups: dict[int, list[int]] = {}
     for i in range(n):
@@ -229,6 +222,74 @@ def cluster(findings: list[Finding]) -> list[Finding]:
                 )
         primary.severity = max((m.severity for m in members), key=severity_rank)
         primary.cluster_members = [m.stable_id or findings_mod.stable_id(m) for m in members]
+        primary.start_line = min(m.start_line for m in members)
+        primary.end_line = max(m.end_line for m in members)
+        out.append(primary)
+    return out
+
+
+def _mergeable(a: Finding, b: Finding) -> bool:
+    """cluster()'s grouping rule."""
+    return (
+        a.file == b.file
+        and COARSE[a.category] == COARSE[b.category]
+        and _overlap(a, b)
+        and a.source not in UNMERGED_SOURCES
+        and b.source not in UNMERGED_SOURCES
+    )
+
+
+def _verdict_rank(f: Finding) -> int:
+    """CONFIRMED > tool-verified/unverified nit (SKIPPED) > no verdict/UNKNOWN > REFUTED."""
+    v = f.verdict.value if f.verdict is not None else None
+    return {"CONFIRMED": 3, "SKIPPED": 2, "REFUTED": 0}.get(v, 1)
+
+
+def merge_verified(groups: list[list[Finding]]) -> list[Finding]:
+    """Merge duplicates across already clustered and verified groups (one group per packet).
+
+    Packets are verified as soon as their finders finish, so a duplicate found by two
+    packets (a file split across packets) is verified twice. Two findings merge under
+    cluster()'s rule, but only when they come from different groups: within one group this
+    is a no-op. The primary is the member with the best verdict (CONFIRMED > none/UNKNOWN >
+    REFUTED; ties: first in order), keeping its verdict and reason; otherwise the merge is
+    cluster()'s (severity max, line span, cluster_members union, tool evidence appended).
+    Severity max skips REFUTED members unless every member was refuted: a refuted duplicate
+    must not raise a confirmed finding's severity.
+    """
+    flat = [(g, f) for g, members in enumerate(groups) for f in members]
+    n = len(flat)
+    parent = list(range(n))
+    for i in range(n):
+        for j in range(i + 1, n):
+            (ga, a), (gb, b) = flat[i], flat[j]
+            if ga != gb and _mergeable(a, b):
+                parent[_find(parent, j)] = _find(parent, i)
+    sets: dict[int, list[int]] = {}
+    for i in range(n):
+        sets.setdefault(_find(parent, i), []).append(i)
+
+    out: list[Finding] = []
+    for idx in sorted(sets.values(), key=lambda g: g[0]):
+        members = [flat[i][1] for i in idx]
+        if len(members) == 1:
+            out.append(members[0])
+            continue
+        best = max(_verdict_rank(m) for m in members)
+        primary = next(m for m in members if _verdict_rank(m) == best)
+        for m in members:
+            if m is not primary and not m.source.startswith("llm"):
+                primary.evidence.append(
+                    Evidence(m.file, m.start_line, f"{m.source} {m.rule_id}: {m.title}")
+                )
+        standing = [m for m in members if _verdict_rank(m) > 0] or members
+        primary.severity = max((m.severity for m in standing), key=severity_rank)
+        ids: list[str] = []
+        for m in members:
+            for sid in m.cluster_members or [m.stable_id or findings_mod.stable_id(m)]:
+                if sid not in ids:
+                    ids.append(sid)
+        primary.cluster_members = ids
         primary.start_line = min(m.start_line for m in members)
         primary.end_line = max(m.end_line for m in members)
         out.append(primary)

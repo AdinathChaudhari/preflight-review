@@ -160,11 +160,18 @@ class Coverage:
     total: int
     reviewed: list[str] = field(default_factory=list)
     not_reviewed: list[tuple[str, str]] = field(default_factory=list)
+    reviewed_earlier: list[tuple[str, str, int]] = field(default_factory=list)
     excluded: list[str] = field(default_factory=list)
 
 
-def coverage(scope, reviewed_paths, not_reviewed, triaged_out, triage_notes) -> Coverage:
-    """Single source of truth: len(reviewed) + len(not_reviewed) == total by construction."""
+def coverage(
+    scope, reviewed_paths, not_reviewed, triaged_out, triage_notes, reviewed_earlier=None
+) -> Coverage:
+    """Single source of truth: len(reviewed) + len(reviewed_earlier) + len(not_reviewed)
+    == total by construction."""
+    earlier: dict[str, tuple[str, str, int]] = {}
+    for entry in reviewed_earlier or []:
+        earlier.setdefault(entry[0], tuple(entry))
     universe = list(dict.fromkeys(fc.path for fc in scope.files))
     triaged = set(triaged_out)
     if reviewed_paths is None:
@@ -177,8 +184,11 @@ def coverage(scope, reviewed_paths, not_reviewed, triaged_out, triage_notes) -> 
         reasons.setdefault(path, reason)
     reviewed: list[str] = []
     missing: list[tuple[str, str]] = []
+    earlier_out: list[tuple[str, str, int]] = []
     for p in universe:
-        if p in done:
+        if p in earlier:
+            earlier_out.append(earlier[p])
+        elif p in done:
             reviewed.append(p)
         elif p in reasons:
             missing.append((p, reasons[p]))
@@ -187,11 +197,14 @@ def coverage(scope, reviewed_paths, not_reviewed, triaged_out, triage_notes) -> 
             missing.append((p, "triaged as trivial" + (f": {note}" if note else "")))
         else:
             missing.append((p, "not reviewed (no reason recorded)"))
-    return Coverage(len(universe), reviewed, missing, list(scope.filtered_out))
+    return Coverage(len(universe), reviewed, missing, earlier_out, list(scope.filtered_out))
 
 
 def coverage_of(run: RunResult) -> Coverage:
-    return coverage(run.scope, run.reviewed_paths, run.not_reviewed, run.triaged_out, run.triage_notes)
+    return coverage(
+        run.scope, run.reviewed_paths, run.not_reviewed, run.triaged_out, run.triage_notes,
+        run.reviewed_earlier,
+    )
 
 
 def _tier(run: RunResult, path: str) -> str:
@@ -254,6 +267,24 @@ def _not_reviewed_section(run: RunResult, entries: list[tuple[str, str]]) -> str
     return "\n".join(lines)
 
 
+def _reviewed_earlier_section(run: RunResult, entries: list[tuple[str, str, int]]) -> str:
+    lines = [
+        f"- {path} \u2014 round {rnd:02d} ({report})"
+        for path, report, rnd in entries[:MAX_NOT_REVIEWED]
+    ]
+    if len(entries) > MAX_NOT_REVIEWED:
+        lines.append(f"- ... and {len(entries) - MAX_NOT_REVIEWED} more (full list in the JSON report)")
+    lines += [
+        "",
+        (
+            "These files' exact changes were reviewed in an earlier round under the same "
+            "prompts and settings; their open findings are listed under Previously reported; "
+            "run with --full to review them again."
+        ),
+    ]
+    return "\n".join(lines)
+
+
 def _excluded_line(excluded: list[str]) -> str:
     if not excluded:
         return "Excluded by path filters: none"
@@ -277,14 +308,34 @@ def mode_line(run: RunResult) -> str:
     mode = run.config.mode
     if run.mode_requested == "menu":
         return f"Mode: {mode} (chosen at the pre-run depth menu)"
-    if run.mode_requested != "auto":
+    auto = run.mode_requested == "auto" or (mode == "auto" and not run.mode_requested and bool(run.batch_modes))
+    if not auto:
         return f"Mode: {mode}" + (" (set explicitly)" if run.mode_requested else "")
-    if not run.crucial_paths:
-        return f"Mode: {mode} (auto — no crucial paths changed)"
     shown = ", ".join(run.crucial_paths[:HEADER_CRUCIAL_CAP])
     more = len(run.crucial_paths) - HEADER_CRUCIAL_CAP
     if more > 0:
         shown += f", +{more} more"
+    if run.batch_modes:
+        counts: dict[str, int] = {}
+        for m in run.batch_modes.values():
+            counts[m] = counts.get(m, 0) + 1
+        total = len(run.batch_modes)
+        if len(counts) == 1:
+            only = next(iter(counts))
+            why = f"crucial paths: {shown}" if run.crucial_paths else "no crucial paths changed"
+            return f"Mode: auto -> {only} for all {total} packet{'s' if total != 1 else ''} ({why})"
+        deep = counts.get("deep", 0)
+        rest = ", ".join(f"{m} for {n}" for m, n in counts.items() if m != "deep")
+        nfiles = len(run.crucial_paths)
+        files = f" ({nfiles} file(s): {shown})" if nfiles else ""
+        head = f"deep for {deep} packet(s){files}" if deep else ""
+        return f"Mode: auto -> {', '.join(x for x in (head, rest) if x)}"
+    if mode == "auto":  # no packet ran (not started, nothing fresh to review)
+        if not run.crucial_paths:
+            return "Mode: auto (no crucial paths changed: standard)"
+        return f"Mode: auto (deep for packets with crucial paths: {shown}; standard for the rest)"
+    if not run.crucial_paths:
+        return f"Mode: {mode} (auto — no crucial paths changed)"
     return f"Mode: {mode} (auto — crucial paths: {shown})"
 
 
@@ -353,6 +404,8 @@ def render_report(run: RunResult) -> str:
     entries = not_reviewed_entries(run)
     k = len(entries)
     nr = f"{k} (see Not reviewed)" if k else "none"
+    if cov.reviewed_earlier:
+        nr += f", {len(cov.reviewed_earlier)} reviewed earlier (see Reviewed earlier)"
     out.append(
         f"Scope: {start}..head, worktree included {'yes' if s.include_worktree else 'no'}, "
         f"{n} files, +{added}/−{deleted} lines, reviewed {len(cov.reviewed)}/{n}, "
@@ -373,6 +426,11 @@ def render_report(run: RunResult) -> str:
             result += " — " + "; ".join(run.incomplete_reasons)
         out.append(result)
     out += ["", f"## Not reviewed ({k})", "", _not_reviewed_section(run, entries), "", _excluded_line(cov.excluded)]
+    if cov.reviewed_earlier:
+        out += [
+            "", f"## Reviewed earlier ({len(cov.reviewed_earlier)})", "",
+            _reviewed_earlier_section(run, cov.reviewed_earlier),
+        ]
     incomplete = merge_risk(run)[0] == "unknown"
     out += ["", "## Walkthrough", "", _walkthrough(run.walkthrough, incomplete), "", _merge_risk(run), ""]
 
@@ -442,6 +500,12 @@ def render_report(run: RunResult) -> str:
     out.append(f"- Model calls: {len(run.lane_results)}")
     out.append("- " + cost_line(run.cost_usd, run.lane_results))
     out.append(f"- Duration: {run.duration_s:.1f}s")
+    if run.estimate is not None and run.outcome != "not_started":
+        out.append(
+            f"- Estimate vs actual: ~{run.estimate.minutes} min est., "
+            f"{run.duration_s / 60:.0f} min actual; ~{run.estimate.usd_text} est., "
+            f"${run.cost_usd:.2f} actual (rough; see docs/measurements.md to recalibrate)"
+        )
     out.append(f"- Claude Code: {run.claude_code_version or 'unknown'}")
     out.append(f"- Prompts sha: {prompts_sha}")
     first_sha = run.packet_shas[0] if run.packet_shas else (run.packet.sha if run.packet else "none")

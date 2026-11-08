@@ -32,7 +32,7 @@ fi
 
 # Word-splitting of $cmd and PREFLIGHT_REVIEW_ARGS is intentional.
 # shellcheck disable=SC2086
-output=$($cmd review --committed-only --incremental ${PREFLIGHT_REVIEW_ARGS:-} </dev/null 2>&1)
+output=$($cmd review --committed-only ${PREFLIGHT_REVIEW_ARGS:-} </dev/null 2>&1)
 code=$?
 
 printf '%s\n' "$output" | tail -n 1

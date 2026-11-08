@@ -131,6 +131,18 @@ class AutoConfig:
     deep_paths: list[str] = field(default_factory=lambda: list(DEFAULT_DEEP_PATHS))
 
 
+MIN_PACKET_TOKENS = 2000
+
+
+@dataclass(frozen=True)
+class PacketTokensConfig:
+    """Diff tokens per packet, by depth: quick and standard work reads more per call."""
+
+    quick: int = 32000
+    standard: int = 24000
+    deep: int = 16000
+
+
 @dataclass
 class ModelsConfig:
     # Cheap models by default; Opus only adjudicates escalated splits (decision 15).
@@ -159,7 +171,9 @@ class Config:
     budget_usd: float | None = None  # null = no run cap and no per-call caps
     # Ask before a run estimated above this (no TTY: do not start it); null = never ask.
     confirm_above_usd: float | None = 5.0
-    call_timeout_s: int = 3600  # wall-clock limit per claude -p call
+    # Wall-clock limit per claude -p call: a Sonnet lane past 25 min is hung. A timeout fails
+    # the lane and the report lists it under Not reviewed.
+    call_timeout_s: int = 1500
     max_rounds: int = 3
     verify_cmd: str | None = None
     rules_file: str = ".preflight/RULES.md"
@@ -195,7 +209,8 @@ class Config:
     intent: IntentConfig = field(default_factory=IntentConfig)
     nitpicks: NitpicksConfig = field(default_factory=NitpicksConfig)
     report_dir: str = ".preflight/reviews"
-    concurrency: int = 5
+    concurrency: int = 10
+    packet_tokens: PacketTokensConfig = field(default_factory=PacketTokensConfig)
     cache_warm_seconds: int = 20
     learnings: LearningsConfig = field(default_factory=LearningsConfig)
     auto: AutoConfig = field(default_factory=AutoConfig)
@@ -224,7 +239,7 @@ mode: auto                   # auto | quick | standard | deep (auto: deep on cru
 backend: cli                 # claude -p subprocess
 budget_usd: null             # e.g. 5.0 caps the run (and each call); null = no cap
 confirm_above_usd: 5         # above this, offer a depth menu first; no TTY: not started
-call_timeout_s: 3600         # wall-clock limit per claude -p call
+call_timeout_s: 1500         # wall-clock limit per claude -p call (a lane past 25 min is hung)
 max_rounds: 3                # advisory: past this round the report suggests a step back
 verify_cmd: null             # e.g. ".venv/bin/python -m pytest -q -x"
 rules_file: .preflight/RULES.md
@@ -272,7 +287,8 @@ nitpicks:                    # caps apply under profile chill; null = no cap
   per_file: null
   per_run: null
 report_dir: .preflight/reviews
-concurrency: 5
+concurrency: 10
+packet_tokens: {quick: 32000, standard: 24000, deep: 16000}  # diff tokens per packet, by depth
 cache_warm_seconds: 20
 learnings:
   rerank: true
@@ -413,6 +429,12 @@ def config_from_dict(d: dict[str, Any] | None) -> Config:
         raise ConfigError(
             f"docs_review: expected one of {', '.join(DOCS_REVIEW_VALUES)}, got {cfg.docs_review!r}"
         )
+    for f in dataclasses.fields(cfg.packet_tokens):
+        v = getattr(cfg.packet_tokens, f.name)
+        if v < MIN_PACKET_TOKENS:
+            raise ConfigError(
+                f"packet_tokens.{f.name}: expected an integer >= {MIN_PACKET_TOKENS}, got {v}"
+            )
     compile_id_patterns(cfg.tools.key_consumers.id_patterns)
     return cfg
 
@@ -487,6 +509,24 @@ def legacy_defaults_note(config: Config) -> str | None:
         + ". Remove them from .preflight/config.yaml (or run `init --force`) if not deliberate;"
         " config is read from the base branch, so this takes effect once merged there"
     )
+
+
+def worktree_config_diff(root: Path, base_ref: str) -> list[str]:
+    """Sorted top-level keys whose values differ between `.preflight/config.yaml` at
+    `base_ref` and the worktree copy. [] when either is missing or unparsable, or equal.
+    Config is still loaded from the base ref; this only feeds a note."""
+    try:
+        base_text = gitutil.show_file(base_ref, CONFIG_PATH, Path(root))
+        p = Path(root) / CONFIG_PATH
+        work_text = p.read_text() if p.exists() else None
+        if base_text is None or work_text is None:
+            return []
+        base, work = yaml.safe_load(base_text), yaml.safe_load(work_text)
+    except (GitError, OSError, yaml.YAMLError):
+        return []
+    if not isinstance(base, dict) or not isinstance(work, dict):
+        return []
+    return sorted(k for k in set(base) | set(work) if base.get(k) != work.get(k))
 
 
 def merge_overrides(config: Config, **overrides: Any) -> Config:

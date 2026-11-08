@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from collections.abc import Callable
@@ -27,6 +28,7 @@ from preflight_review.findings import (
     to_dict,
 )
 from preflight_review.model import ModelRequest, ModelResult
+from preflight_review.model.limits import is_paused
 from preflight_review.model.schemas import load_schema
 from preflight_review.scope import Scope
 from preflight_review.stages.finders import packet_system_prompt, source_lens
@@ -104,8 +106,14 @@ class VerdictCache:
         self.repo_root = Path(repo_root)
         self.path = self.repo_root / ".preflight" / "cache" / "verdicts.json"
         self._data: dict[str, dict] | None = None
+        # Shared by the per-packet verifiers that run in parallel.
+        self._lock = threading.RLock()
 
     def _load(self) -> dict[str, dict]:
+        with self._lock:
+            return self._load_locked()
+
+    def _load_locked(self) -> dict[str, dict]:
         if self._data is None:
             try:
                 data = json.loads(self.path.read_text())
@@ -123,13 +131,21 @@ class VerdictCache:
         return hashlib.sha1((content + (finding.stable_id or "") + salt).encode()).hexdigest()
 
     def get(self, finding: Finding, salt: str = "") -> dict | None:
-        return self._load().get(self.key(finding, salt))
+        key = self.key(finding, salt)
+        with self._lock:
+            return self._load_locked().get(key)
 
     def put(self, finding: Finding, verdict: dict, salt: str = "") -> None:
-        self._load()[self.key(finding, salt)] = verdict
+        key = self.key(finding, salt)
+        with self._lock:
+            self._load_locked()[key] = verdict
 
     def save(self) -> None:
-        data = self._load()
+        with self._lock:
+            self._save_locked()
+
+    def _save_locked(self) -> None:
+        data = self._load_locked()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, suffix=".tmp")
         try:
@@ -437,11 +453,16 @@ def run_verifier(
                     )
             if not res.ok:
                 errors.append(res.error or res.subtype)
+            if is_paused(res):
+                paused.add(id(f))
             out.results[key] = res
 
     # Votes: two in parallel first (one when only one is configured). When they agree, that
     # is the verdict; otherwise the remaining votes run and the majority decides.
     state: dict[int, tuple[list[Vote], list[str], int]] = {}  # id -> (votes, errors, asked)
+    # Findings with a vote the usage-limit breaker skipped: no further vote is asked for (it
+    # would be skipped too, and only inflate the run's count of calls asked for).
+    paused: set[int] = set()
     with ThreadPoolExecutor(max_workers=max(1, config.concurrency)) as pool:
         first = [
             (f, [pool.submit(vote_call, f) for _ in range(min(2, votes_of[id(f)]))])
@@ -456,6 +477,8 @@ def run_verifier(
         for f in to_call:
             votes, errors, asked = state[id(f)]
             n_votes = votes_of[id(f)]
+            if id(f) in paused:
+                continue
             if asked < n_votes and not (len(votes) == asked and unanimous(votes)):
                 more.append(
                     (f, [pool.submit(vote_call, f) for _ in range(n_votes - asked)], asked)

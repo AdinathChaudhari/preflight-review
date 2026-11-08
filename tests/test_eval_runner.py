@@ -298,3 +298,12 @@ def test_run_eval_unverified_golden_counts_for_recall(tmp_path):
     res = _deploy_case_with_unknown_verifier(tmp_path, noise=False)
     assert res["n_unverified"] == 1 and len(res["cases"][0]["matched"]) == 2
     assert res["ep_recall"] == 1.0  # a golden that lands in Unverified was still surfaced
+
+
+def test_eval_options_always_review_in_full(tmp_path):
+    """An eval never reads the reviewed-file cache: every case is reviewed from scratch."""
+    from preflight_review.evaluation.runner import _options
+
+    opts = _options(tmp_path, "main", "fake", None)
+    assert opts.full is True and opts.yes is True
+    assert _options(tmp_path, "main", "fake", {"mode": "quick"}).full is True

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from preflight_review import prompts
@@ -21,6 +23,8 @@ SKIPPED = "SKIPPED"
 TRIAGE_MAX_TURNS = 2
 TRIAGE_BUDGET_USD = 0.05
 MAX_DIFF_CHARS = 20_000
+GROUP_MAX_FILES = 20
+GROUP_MAX_CHARS = 60_000
 
 
 @dataclass
@@ -67,26 +71,72 @@ def file_diff_text(fc: FileChange) -> str:
     return text
 
 
-def _haiku(fc: FileChange, scope: Scope, config: Config, backend) -> tuple[str, ModelResult | None]:
+def _fenced(text: str) -> str:
+    """Fence longer than any backtick run inside the diff, so a diff cannot close it early."""
+    longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}diff\n{text}\n{fence}"
+
+
+def _groups(files: list[tuple[FileChange, str]]) -> list[list[tuple[FileChange, str]]]:
+    """Plan-order groups of at most GROUP_MAX_FILES files and GROUP_MAX_CHARS of diff text;
+    a file bigger than the char cap ends up alone."""
+    groups: list[list[tuple[FileChange, str]]] = []
+    cur: list[tuple[FileChange, str]] = []
+    chars = 0
+    for item in files:
+        n = len(item[1])
+        if cur and (len(cur) >= GROUP_MAX_FILES or chars + n > GROUP_MAX_CHARS):
+            groups.append(cur)
+            cur, chars = [], 0
+        cur.append(item)
+        chars += n
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def _haiku_group(
+    group: list[tuple[FileChange, str]], scope: Scope, config: Config, backend
+) -> tuple[dict[str, tuple[str, str]], ModelResult | None]:
+    """One Haiku call for a group. Returns {path: (decision, reason)} and the raw result.
+    Anything but a clean, exact APPROVED for a listed path resolves to NEEDS_REVIEW."""
+    paths = [fc.path for fc, _ in group]
+    out = {p: (NEEDS_REVIEW, "") for p in paths}
     try:
+        blocks = "\n\n".join(f"### {fc.path}\n{_fenced(text)}" for fc, text in group)
         req = ModelRequest(
             role="triage",
             model=config.models.triage,
             system_prompt="",
-            prompt=prompts.render("triage", path=fc.path, diff=file_diff_text(fc)),
-            schema=load_schema("triage"),
+            prompt=prompts.render("triage_batch", files=blocks),
+            schema=load_schema("triage_batch"),
             cwd=scope.repo_root,
             tools=[],
             max_turns=TRIAGE_MAX_TURNS,
-            max_budget_usd=call_cap(config, TRIAGE_BUDGET_USD),
+            max_budget_usd=call_cap(config, TRIAGE_BUDGET_USD * len(group)),
         )
         res = backend.run(req)
     except Exception as exc:  # never skip a file on error
-        logger.warning("triage failed for %s: %s", fc.path, exc)
-        return NEEDS_REVIEW, None
-    if res.ok and isinstance(res.structured, dict) and res.structured.get("decision") == APPROVED:
-        return APPROVED, res
-    return NEEDS_REVIEW, res
+        logger.warning("triage group failed (%d files): %s", len(group), exc)
+        return out, None
+    if not (res.ok and isinstance(res.structured, dict)):
+        return out, res
+    decisions = res.structured.get("decisions")
+    if not isinstance(decisions, list):
+        return out, res
+    seen: Counter[str] = Counter()
+    for d in decisions:
+        if isinstance(d, dict) and isinstance(d.get("path"), str):
+            seen[d["path"]] += 1
+    listed = set(paths)
+    for d in decisions:
+        if not isinstance(d, dict):
+            continue
+        p = d.get("path")
+        if isinstance(p, str) and p in listed and seen[p] == 1 and d.get("decision") == APPROVED:
+            out[p] = (APPROVED, str(d.get("reason", "")) or "haiku")
+    return out, res
 
 
 def triage(scope: Scope, config: Config, backend, review_docs: bool = False) -> TriageResult:
@@ -116,15 +166,22 @@ def triage(scope: Scope, config: Config, backend, review_docs: bool = False) -> 
 
     lane_results: dict[str, ModelResult] = {}
     if config.triage.haiku:
-        for fc in undecided:
-            if (config.docs_review != "off" or review_docs) and is_prose_doc(fc.path):
-                continue  # docs are reviewed for consistency; Haiku never approves them
-            decision, res = _haiku(fc, scope, config, backend)
-            per_file[fc.path] = decision
-            if res is not None:
-                lane_results[f"triage:{fc.path}"] = res
-                if decision == APPROVED:
-                    notes[fc.path] = str((res.structured or {}).get("reason", "")) or "haiku"
+        gate_docs = config.docs_review != "off" or review_docs
+        # Docs are reviewed for consistency; Haiku never approves them.
+        sendable = [(fc, file_diff_text(fc)) for fc in undecided if not (gate_docs and is_prose_doc(fc.path))]
+        groups = _groups(sendable)
+        if groups:
+            with ThreadPoolExecutor(max_workers=max(1, min(len(groups), config.concurrency))) as pool:
+                futures = [pool.submit(_haiku_group, g, scope, config, backend) for g in groups]
+                outcomes = [f.result() for f in futures]  # plan order, not completion order
+            for k, (group, (decided, res)) in enumerate(zip(groups, outcomes), start=1):
+                if res is not None:
+                    lane_results[f"triage:g{k}"] = res
+                for fc, _ in group:
+                    decision, reason = decided[fc.path]
+                    per_file[fc.path] = decision
+                    if decision == APPROVED:
+                        notes[fc.path] = reason
 
     skip = all(v != NEEDS_REVIEW for v in per_file.values())
     reason = "all files trivial (approved or skipped)" if skip else ""

@@ -1,6 +1,6 @@
 {
   "name": "preflight",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Local pre-push AI code review: writes <repo>-PR<##>-preflight-review-<##>.md for agents to act on",
   "author": {
     "name": "Adinath Chaudhari"

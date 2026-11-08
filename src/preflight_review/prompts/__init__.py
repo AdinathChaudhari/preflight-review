@@ -8,7 +8,7 @@ from preflight_review.errors import SchemaError
 
 CORE_PROMPT_NAMES = ("system", "lens_correctness", "lens_contracts_tests", "verifier",
                      "security", "verifier_security", "lens_data_concurrency",
-                     "lens_rules_compliance", "triage", "walkthrough",
+                     "lens_rules_compliance", "triage", "triage_batch", "walkthrough",
                      "rerank", "judge", "propose", "adjudicator", "sweep", "docs_review",
                      "lens_deploy_ci")
 

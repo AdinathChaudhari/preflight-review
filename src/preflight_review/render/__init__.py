@@ -73,6 +73,11 @@ class RunResult:
     calls_done: int = 0
     calls_total: int = 0
     resume_command: str = ""
+    # (path, report basename, round) of files whose exact change was reviewed cleanly in an
+    # earlier round under the same prompts and settings; skipped this run.
+    reviewed_earlier: list[tuple[str, str, int]] = field(default_factory=list)
+    # packet/batch index -> 'quick' | 'standard' | 'deep' (auto mode can mix)
+    batch_modes: dict[int, str] = field(default_factory=dict)
 
 
 from preflight_review.render.json_out import render_json, write_ndjson  # noqa: E402

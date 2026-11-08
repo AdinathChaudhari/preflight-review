@@ -6,13 +6,13 @@ Everything the README leaves out: per-repo setup, every command and flag, the re
 
 - `preflight-review init [--force] [--with-ast-rules]` writes `.preflight/config.yaml` (every key at its default) and a rules file. `--with-ast-rules` also copies the bundled ast-grep rules (`no-shell-true`, `no-yaml-unsafe-load`) into `.preflight/ast-rules/`.
 - `preflight-review doctor` checks the Claude CLI, git, the config `review` will use (`.preflight/config.yaml` from the base branch; when the base branch has none it checks the working-tree file and says review uses defaults until it is merged), and the optional tools (ruff, gitleaks, ast-grep, osv-scanner, zizmor, actionlint, shellcheck). It also makes one small model call to check that the `models.adjudicator` alias answers on this account and provider; when it does not, the check is shown as optional and split votes adjudicate on `models.adjudicator_fallback`.
-- `preflight-review install-hook [--force]` installs a report-only pre-push hook. It runs `review --committed-only --incremental` and always lets the push through. `preflight-review uninstall-hook` removes it.
+- `preflight-review install-hook [--force]` installs a report-only pre-push hook. It runs `review --committed-only` (incremental by default) and always lets the push through. `preflight-review uninstall-hook` removes it.
 - `PREFLIGHT=0 git push` skips the hook for one push.
 
 ## Running
 
 ```sh
-preflight-review review [--base origin/main] [--full | --incremental] [--mode auto|quick|standard|deep] \
+preflight-review review [--base origin/main] [--full] [--mode auto|quick|standard|deep] \
   [--json] [--show-pre-existing] [--backend cli|fake] [--committed-only] [--no-walkthrough] [--budget-usd N] [--yes] [--resume]
 ```
 
@@ -45,7 +45,7 @@ A review is never cut short once it starts (only an opt-in `--budget-usd` stops 
 preflight: estimated ~$1.9, ~7 min for 10 files in standard mode (2 batches; ~36 calls: 8 finders, 2 security, ~15 verify (~1 adjudicated), 10 triage, 1 walkthrough; rough)
 ```
 
-The estimate counts batches from the diff size; finder and security calls per batch; one sweep per run in deep mode; verifier calls for an expected 3 model candidates per batch (about 2.3 Sonnet votes each with `verifier.votes: 3`, plus a 5% share of Opus adjudications); a Haiku triage call per changed file; and the walkthrough. Each call is priced from Opus-equivalent rates fitted to measured runs (an incremental 74-file deep run in 10 batches: 56 finder calls ~$14.8, 11 security calls $3.7; the seeded eval in deep mode: ~$0.90 per 1-3 file case), scaled by the configured model (Sonnet 1/2, Haiku 1/40 of Opus; an unknown model counts as Opus). Read it as an order of magnitude, not a quote.
+The estimate counts batches from the diff size; finder and security calls per batch; one sweep per run in deep mode; verifier calls for an expected 3 model candidates per batch (about 2.3 Sonnet votes each with `verifier.votes: 3`, plus a 5% share of Opus adjudications); batched Haiku triage (up to 20 files per call); and the walkthrough. Each call is priced from Opus-equivalent rates fitted to measured runs (an incremental 74-file deep run in 10 batches: 56 finder calls ~$14.8, 11 security calls $3.7; the seeded eval in deep mode: ~$0.90 per 1-3 file case), scaled by the configured model (Sonnet 1/2, Haiku 1/40 of Opus; an unknown model counts as Opus). Read it as an order of magnitude, not a quote.
 
 When the estimate is above `confirm_above_usd` ($5 by default) and `--yes` was not passed:
 
@@ -124,7 +124,7 @@ Responses are appended to `.preflight/responses.jsonl`. Learnings live in `.pref
 - `confirm_above_usd`: 5. Above this many USD of pre-run estimate, offer the depth menu; with no terminal, the review is not started. null = never ask. See "Pre-run estimate and depth menu".
 - `backend`: `cli`
 - `budget_usd`: null. No run cap and no per-call `--max-budget-usd`. Set a number (or pass `--budget-usd N`) to opt in: batches stop once the next one would exceed it, and every model call gets a per-call cap derived from it. `--budget-usd` can add a cap but cannot remove one a repo's config sets; set `budget_usd: null` there instead (on the base branch: it takes effect once merged).
-- `call_timeout_s`: 3600. Wall-clock limit for each `claude -p` call. A call that times out fails its lane, so keep this large for deep Opus runs.
+- `call_timeout_s`: 1500. Wall-clock limit for each `claude -p` call. A call that times out fails its lane.
 - `max_rounds`: 3. Advisory only: past this round the report prints a "step back" message. It drops nothing, so it stays.
 - `verify_cmd`: null
 - `rules_file`: `.preflight/RULES.md`
@@ -158,7 +158,8 @@ Responses are appended to `.preflight/responses.jsonl`. Learnings live in `.pref
 - `nitpicks.per_file`: null (no cap; a number caps nitpicks per file under profile `chill` only)
 - `nitpicks.per_run`: null (no cap; a number caps nitpicks per run under profile `chill` only)
 - `report_dir`: `.preflight/reviews`
-- `concurrency`: 5
+- `concurrency`: 10. Cap on model calls in flight across all packets and verifier votes.
+- `packet_tokens`: `{quick: 32000, standard: 24000, deep: 16000}`. Diff tokens per packet, by depth.
 - `cache_warm_seconds`: 20
 - `learnings.rerank`: true
 - `learnings.cap`: 20
