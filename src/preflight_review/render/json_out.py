@@ -69,6 +69,11 @@ def render_json(run: RunResult) -> dict:
             "excluded_by_path_filter": list(cov.excluded),
             "reviewed": len(cov.reviewed),
             "total": cov.total,
+            "reviewed_earlier": len(cov.reviewed_earlier),
+            "reviewed_earlier_files": [
+                {"path": path, "report": report, "round": rnd}
+                for path, report, rnd in cov.reviewed_earlier
+            ],
             "batches": run.batches,
             "not_reviewed": [{"path": path, "reason": reason, "risk": _tier(run, path)} for path, reason in not_reviewed_entries(run)],
         },

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -52,7 +53,8 @@ Response = "dict | list | Callable[[ModelRequest], dict] | BackendError"
 
 
 class FakeBackend:
-    """Deterministic backend keyed by request role; records every call."""
+    """Deterministic backend keyed by request role; records every call. Thread-safe: the
+    response pop and the call record share a lock; a callable response runs outside it."""
 
     name = "fake"
 
@@ -67,6 +69,7 @@ class FakeBackend:
         }
         self.default = default
         self.calls: list[ModelRequest] = []
+        self._lock = threading.Lock()
 
     @classmethod
     def from_file(cls, path: str | Path) -> "FakeBackend":
@@ -87,16 +90,17 @@ class FakeBackend:
         return cls(responses, default=conv(default))
 
     def run(self, req: ModelRequest) -> ModelResult:
-        self.calls.append(req)
         resp: Any = None
         found = False
-        if req.role in self.responses:
-            entry = self.responses[req.role]
-            if isinstance(entry, list):
-                if entry:
-                    resp, found = entry.pop(0), True
-            else:
-                resp, found = entry, True
+        with self._lock:
+            self.calls.append(req)
+            if req.role in self.responses:
+                entry = self.responses[req.role]
+                if isinstance(entry, list):
+                    if entry:
+                        resp, found = entry.pop(0), True
+                else:
+                    resp, found = entry, True
         if not found and self.default is not None:
             resp, found = self.default, True
         if not found:

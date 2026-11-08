@@ -145,23 +145,31 @@ def test_estimate_scales_with_mode(tmp_path):
 def test_auto_runs_standard_without_crucial_paths(tmp_path):
     r = _repo(tmp_path, "app/service.py")
     run, paths, be = _review(r)
-    assert run.config.mode == "standard" and run.outcome == "complete"
+    # Depth is per packet: the run keeps `auto`, its one packet ran standard.
+    assert run.config.mode == "auto" and run.outcome == "complete"
+    assert set(run.batch_modes.values()) == {"standard"}
     assert not any(c.role.startswith("sweep") for c in be.calls)
     manifest = json.loads(paths["manifest"].read_text())
     assert manifest["mode_requested"] == "auto" and manifest["mode_resolved"] == "standard"
     assert manifest["crucial_paths"] == [] and manifest["estimate"]["files"] == 1
-    assert "Mode: standard (auto — no crucial paths changed)" in paths["md"].read_text()
+    assert (
+        "Mode: auto -> standard for all 1 packet (no crucial paths changed)"
+        in paths["md"].read_text()
+    )
 
 
 def test_auto_runs_deep_on_crucial_path(tmp_path):
     r = _repo(tmp_path, "db/migrations/0015.py")
     run, paths, be = _review(r)
-    assert run.config.mode == "deep"
+    assert run.config.mode == "auto" and set(run.batch_modes.values()) == {"deep"}
     assert any(c.role.startswith("sweep") for c in be.calls)
     manifest = json.loads(paths["manifest"].read_text())
     assert manifest["mode_resolved"] == "deep"
     assert manifest["crucial_paths"] == ["db/migrations/0015.py"]
-    assert "Mode: deep (auto — crucial paths: db/migrations/0015.py)" in paths["md"].read_text()
+    assert (
+        "Mode: auto -> deep for all 1 packet (crucial paths: db/migrations/0015.py)"
+        in paths["md"].read_text()
+    )
 
 
 def test_explicit_mode_wins_over_auto(tmp_path):
@@ -200,19 +208,19 @@ def test_gate_blocks_without_terminal(tmp_path):
     run, paths, _ = _review(r, be, choose=lambda menu: None, include_worktree=False)
     assert be.calls == []
     assert run.outcome == "not_started"
-    assert set(run.mode_estimates) == set(MODES)
+    assert set(run.mode_estimates) == {*MODES, "auto"}
     md = paths["md"].read_text()
     assert "Result: not started" in md and "no terminal to choose" in md
-    for m in MODES:
+    for m in (*MODES, "auto"):
         assert f"preflight-review review --base main --committed-only --mode {m} --yes" in md
         assert f"- {m}: ~$" in md
-    assert "Mode: deep (auto — crucial paths: db/migrations/0015.py)" in md
+    assert "Mode: auto (deep for packets with crucial paths: db/migrations/0015.py" in md
     data = json.loads(paths["json"].read_text())
     assert data["outcome"] == "not_started" and data["manifest"]["estimate"]["usd"] > 0
     assert data["manifest"]["estimate"]["calls"] > 0
     line = summary_line(run, paths)
     assert line.startswith("preflight: not started:")
-    assert "re-run with --mode quick|standard|deep --yes" in line and "quick ~$" in line
+    assert "re-run with --mode quick|standard|deep|auto --yes" in line and "quick ~$" in line
     # No round is consumed: the next run writes round 01.
     assert load_state(r).branches.get("feature/x") is None or not load_state(r).branches[
         "feature/x"
@@ -224,7 +232,8 @@ def test_gate_blocks_without_terminal(tmp_path):
 def test_gate_passes_with_yes(tmp_path):
     r = _repo(tmp_path, "app/service.py", LOW)
     run, _, be = _review(r, choose=_never_ask, yes=True)
-    assert run.outcome == "complete" and be.calls and run.config.mode == "standard"
+    assert run.outcome == "complete" and be.calls and run.config.mode == "auto"
+    assert set(run.batch_modes.values()) == {"standard"}
 
 
 def test_gate_off_when_threshold_null(tmp_path):
@@ -249,15 +258,18 @@ def test_menu_enter_runs_the_auto_mode(tmp_path):
         return "\n"
 
     run, paths, be = _review(r, choose=enter)
-    assert run.outcome == "complete" and run.config.mode == "deep" and be.calls
+    assert run.outcome == "complete" and run.config.mode == "auto" and be.calls
+    assert set(run.batch_modes.values()) == {"deep"}
     menu = menus[0]
     assert menu.startswith("preflight: 1 files, 1 batch. Choose depth:")
     lines = menu.splitlines()
     assert lines[1].lstrip().startswith("1) quick") and "~$" in lines[1] and "calls" in lines[1]
-    assert lines[3].lstrip().startswith("3) deep") and lines[3].endswith("(auto)")
-    assert "sweep" in lines[3] and "no sweep" in lines[2]
-    assert lines[4].strip() == "4) cancel" and lines[5] == "Choose [3]: "
-    assert "Mode: deep (auto — crucial paths" in paths["md"].read_text()
+    assert lines[3].lstrip().startswith("3) deep") and "sweep" in lines[3]
+    assert "no sweep" in lines[2]
+    # Under auto the default is option 4: per-packet depth.
+    assert lines[4].lstrip().startswith("4) auto") and lines[4].endswith("(auto)")
+    assert lines[5].strip() == "5) cancel" and lines[6] == "Choose [4]: "
+    assert "Mode: auto -> deep for all 1 packet (crucial paths" in paths["md"].read_text()
 
 
 def test_menu_pick_switches_mode(tmp_path):
@@ -265,15 +277,15 @@ def test_menu_pick_switches_mode(tmp_path):
     run, paths, be = _review(r, choose=lambda menu: "1")
     assert run.outcome == "complete" and run.config.mode == "quick"
     assert not any(c.role.startswith("sweep") for c in be.calls)
-    assert any("depth chosen at the pre-run menu: quick (was deep, from auto)" in n
-               for n in run.notes)
+    assert any("depth chosen at the pre-run menu: quick (was auto)" in n for n in run.notes)
+    assert set(run.batch_modes.values()) == {"quick"}
     assert "Mode: quick (chosen at the pre-run depth menu)" in paths["md"].read_text()
     assert json.loads(paths["manifest"].read_text())["mode_requested"] == "menu"
 
 
 def test_menu_cancel_does_not_start(tmp_path):
     r = _repo(tmp_path, "app/service.py", LOW)
-    run, paths, be = _review(r, choose=lambda menu: "4")
+    run, paths, be = _review(r, choose=lambda menu: "5")  # 4 is auto under auto
     assert run.outcome == "not_started" and be.calls == []
     assert "cancelled at the menu" in paths["md"].read_text()
 
@@ -326,7 +338,7 @@ def test_cli_not_started_exits_1_without_model_calls(tmp_path, monkeypatch, caps
 def test_legacy_note_reads_the_file_config_not_resolved_mode(tmp_path):
     r = _repo(tmp_path, "app/service.py", config={"version": 1})
     run, _, _ = _review(r, yes=True)
-    assert run.config.mode == "standard"  # auto resolved to standard
+    assert run.config.mode == "auto" and set(run.batch_modes.values()) == {"standard"}
     assert not any("1.0 defaults" in n for n in run.notes)
     run, _, _ = _review(r, yes=True, full=True, mode="standard")  # CLI flag, not a file key
     assert not any("1.0 defaults" in n for n in run.notes)
