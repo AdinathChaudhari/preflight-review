@@ -101,7 +101,8 @@ def test_default_config_has_no_budget_and_reviews_every_batch(big_repo):
 
 def test_budget_exhaustion_marks_rest_not_reviewed(big_repo):
     be = FakeBackend(default=EMPTY)
-    run, paths = review(big_repo, be, budget_usd=0.08)
+    # Explicit standard: under auto the crucial billing files would form the first packet.
+    run, paths = review(big_repo, be, budget_usd=0.08, mode="standard")
     m = len(run.scope.files)
     assert run.batches == 1
     assert run.outcome == "incomplete"

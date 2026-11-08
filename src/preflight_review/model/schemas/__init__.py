@@ -14,6 +14,7 @@ SCHEMA_NAMES = (
     "verifier",
     "verifier_security",
     "triage",
+    "triage_batch",
     "rerank",
     "walkthrough",
     "judge",

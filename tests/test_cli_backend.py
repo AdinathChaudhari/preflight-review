@@ -110,7 +110,7 @@ def test_effort_flag_follows_max_turns(tmp_path):
 def test_timeout_default_and_override(tmp_path):
     runner = Runner(cp(success_json()))
     CliBackend(runner=runner).run(make_req(tmp_path))
-    assert runner.calls[0][1]["timeout"] == 3600
+    assert runner.calls[0][1]["timeout"] == 1500
     runner = Runner(cp(success_json()))
     CliBackend(runner=runner, timeout_s=120).run(make_req(tmp_path))
     assert runner.calls[0][1]["timeout"] == 120

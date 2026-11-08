@@ -14,13 +14,24 @@ if TYPE_CHECKING:
     from preflight_review.render import RunResult
 
 
+def _mode_resolved(run: RunResult) -> str:
+    distinct = set(run.batch_modes.values())
+    if len(distinct) > 1:
+        return "mixed"
+    if distinct:
+        return next(iter(distinct))
+    return run.config.mode
+
+
 def build_manifest(run: RunResult) -> dict:
+    extra = {"batch_modes": {str(i): m for i, m in run.batch_modes.items()}} if run.batch_modes else {}
     return {
         "preflight_version": __version__,
         "claude_code_version": run.claude_code_version,
         "backend": run.backend_name,
         "mode_requested": run.mode_requested or run.config.mode,
-        "mode_resolved": run.config.mode,
+        "mode_resolved": _mode_resolved(run),
+        **extra,
         "crucial_paths": list(run.crucial_paths[:MANIFEST_CRUCIAL_CAP]),
         "estimate": (
             {

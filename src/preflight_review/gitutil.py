@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -91,3 +92,48 @@ def is_ancestor(ancestor: str, descendant: str, cwd: Path) -> bool:
     raise GitError(
         f"git merge-base --is-ancestor failed ({proc.returncode}): {proc.stderr.strip()}"
     )
+
+
+def blob_shas(cwd: Path, ref: str, paths: list[str]) -> dict[str, str | None]:
+    """Git blob sha of each path at `ref` (None when absent there or not a blob).
+
+    One `git cat-file --batch-check` subprocess for all paths (`<ref>:<path>` lines on
+    stdin, so spaces and unicode are safe). A path containing a newline cannot be sent
+    line-wise and is looked up with its own `rev-parse`.
+    """
+    out: dict[str, str | None] = {p: None for p in paths}
+    batch = [p for p in dict.fromkeys(paths) if "\n" not in p]
+    for p in out:
+        if "\n" in p:
+            proc = _run(["rev-parse", "--verify", "--quiet", f"{ref}:{p}"], cwd)
+            out[p] = proc.stdout.strip() or None if proc.returncode == 0 else None
+    if not batch:
+        return out
+    stdin = "".join(f"{ref}:{p}\n" for p in batch)
+    try:
+        proc = subprocess.run(
+            ["git", "cat-file", "--batch-check"], cwd=cwd, input=stdin.encode("utf-8"),
+            capture_output=True, check=False,
+        )
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise GitError(f"git cat-file --batch-check: {exc}") from exc
+    if proc.returncode != 0:
+        raise GitError(
+            f"git cat-file --batch-check failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    lines = proc.stdout.decode("utf-8", "replace").split("\n")
+    for path, line in zip(batch, lines):
+        parts = line.split(" ")
+        if len(parts) == 3 and parts[1] == "blob":
+            out[path] = parts[0]
+    return out
+
+
+def worktree_blob_sha(root: Path, path: str) -> str:
+    """Git's blob sha of the worktree file (equals git's for committed content); 'D' if absent."""
+    try:
+        data = (Path(root) / path).read_bytes()
+    except OSError:
+        return "D"
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()

@@ -36,7 +36,8 @@ def _review(args: argparse.Namespace) -> int:
         repo_root=Path.cwd(),
         base=args.base,
         full=args.full,
-        incremental=args.incremental,
+        # --incremental is the default and kept as a no-op flag.
+        incremental=True,
         mode=args.mode,
         backend_name=args.backend,
         include_worktree=not args.committed_only,
@@ -252,8 +253,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("review", "Run the review pipeline and write a report.")
     p.add_argument("--base", help="base ref to diff against (default from config)")
     g = p.add_mutually_exclusive_group()
-    g.add_argument("--full", action="store_true", help="review the whole branch diff")
-    g.add_argument("--incremental", action="store_true", help="review only new commits")
+    g.add_argument(
+        "--full", action="store_true",
+        help="review every changed file again, ignoring the reviewed-file cache",
+    )
+    g.add_argument(
+        "--incremental", action="store_true",
+        help="default: only file changes not reviewed before are reviewed (kept for compatibility)",
+    )
     p.add_argument(
         "--mode", choices=["auto", "quick", "standard", "deep"],
         help="review depth (default from config: auto = deep on crucial paths, else standard)",

@@ -28,7 +28,7 @@ import dataclasses
 import hashlib
 import re
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from preflight_review.config import Config
 from preflight_review.context.callers import CallSite
@@ -37,8 +37,8 @@ from preflight_review.context.guidelines import Guideline
 from preflight_review.context.hunks import render_diff, render_file_hunks
 from preflight_review.context.intent import Intent
 from preflight_review.context.learnings import Learning
-from preflight_review.context.risk import TIER_RANK, order_by_risk, risk_tier
 from preflight_review.context.retrieval import format_history_section
+from preflight_review.context.risk import TIER_RANK, order_by_risk, risk_tier
 from preflight_review.context.symbols import RepoIndex, Symbol
 from preflight_review.context.tokens import estimate_tokens
 from preflight_review.errors import PacketBudgetError
@@ -49,6 +49,8 @@ MAX_BODY_LINES = 40
 MAX_TEST_LINES = 5
 NONE = "(none)"
 DEFAULT_BATCH_DIFF_TOKENS = 12_000
+# Diff tokens per packet by depth: quick and standard reads can carry more per call.
+PACKET_DIFF_TOKENS = {"quick": 32_000, "standard": 24_000, "deep": 16_000}
 MIN_WINDOW_LINES = 20
 
 
@@ -162,6 +164,7 @@ class Batch:
     paths: list[str]  # distinct paths in this batch, in order
     split: dict[str, tuple[int, int]] = field(default_factory=dict)  # path -> (part_no, n_parts)
     diff_tokens: int = 0  # estimate_tokens(render_diff(batch scope))
+    mode: str = ""  # depth of this packet when planned with file_modes, else ""
 
 
 @dataclass
@@ -243,12 +246,21 @@ def _split_file(
     return parts
 
 
+def context_bounds(diff_budget: int) -> tuple[float, float]:
+    """(lo, hi) context-to-diff ratio bounds for `build_packet`: a large packet gets a
+    tighter ceiling so its context section stays around 36k tokens."""
+    return (0.5, 1.5) if diff_budget >= 24_000 else (0.5, 3.0)
+
+
 def plan_batches(
     scope: Scope,
     index: RepoIndex,
     diff_budget: int = DEFAULT_BATCH_DIFF_TOKENS,
     companions: list[Companion] | None = None,
     fan_in: dict[str, int] | None = None,
+    *,
+    file_modes: dict[str, str] | None = None,
+    budget_by_mode: dict[str, int] | None = None,
 ) -> BatchPlan:
     plan = BatchPlan()
     plan.risk_tiers = {fc.path: risk_tier(fc.path) for fc in scope.files}
@@ -271,14 +283,52 @@ def plan_batches(
             order.remove(c.companion)
             order.insert(order.index(c.changed) + 1, c.companion)
 
+    modes: dict[str, str] = {}
+    if file_modes is not None:
+        modes = {p: file_modes.get(p, "standard") for p in order}
+        for c in companions or []:  # a companion follows its changed file's mode
+            if c.changed in modes and c.companion in modes and c.changed != c.companion \
+                    and TIER_RANK[risk_tier(c.companion)] <= TIER_RANK["test"]:
+                modes[c.companion] = modes[c.changed]
+        # within each risk tier, deep files first; a companion stays next to its file
+        tier_of = {p: TIER_RANK[risk_tier(p)] for p in order}
+        pos = {p: i for i, p in enumerate(order)}
+        followers = {
+            c.companion: c.changed for c in companions or []
+            if c.changed in by_path and c.companion in by_path and c.changed != c.companion
+            and TIER_RANK[risk_tier(c.companion)] <= TIER_RANK["test"]
+        }
+
+        def _anchor(p: str) -> str:
+            seen = {p}
+            while p in followers and followers[p] not in seen:
+                p = followers[p]
+                seen.add(p)
+            return p
+
+        order = sorted(
+            order,
+            key=lambda p: (
+                tier_of[_anchor(p)],
+                0 if modes[p] == "deep" else 1,
+                pos[_anchor(p)], pos[p],
+            ),
+        )
+
+    def _budget(path: str) -> int:
+        if file_modes is None or not budget_by_mode:
+            return diff_budget
+        return budget_by_mode.get(modes[path], diff_budget)
+
     # entries: (FileChange to render, (part_no, n_parts) | None)
     entries: list[tuple[FileChange, tuple[int, int] | None]] = []
     for path in order:
         fc = by_path[path]
-        if estimate_tokens(_block(scope, index, fc)) <= diff_budget:
+        pb = _budget(path)
+        if estimate_tokens(_block(scope, index, fc)) <= pb:
             entries.append((fc, None))
             continue
-        parts = _split_file(scope, index, fc, diff_budget)
+        parts = _split_file(scope, index, fc, pb)
         if parts is None:
             plan.oversized.append((path, "oversized: hunk too large for one packet"))
             continue
@@ -296,6 +346,7 @@ def plan_batches(
                 paths=paths,
                 split=split,
                 diff_tokens=estimate_tokens(render_diff(dataclasses.replace(scope, files=files), index)),
+                mode=modes.get(paths[0], "") if file_modes is not None else "",
             )
         )
 
@@ -303,7 +354,10 @@ def plan_batches(
     cur_blocks: list[str] = []
     for fc, part in entries:
         blk = _block(scope, index, fc)
-        if cur and _joined_tokens(cur_blocks + [blk]) > diff_budget:
+        mode_changed = (
+            file_modes is not None and cur and modes[fc.path] != modes[cur[-1][0].path]
+        )
+        if cur and (mode_changed or _joined_tokens(cur_blocks + [blk]) > _budget(fc.path)):
             _close(cur)
             cur, cur_blocks = [], []
         cur.append((fc, part))
