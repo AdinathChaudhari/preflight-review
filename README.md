@@ -14,7 +14,7 @@ Social preview: docs/media/hero-glass.jpg (a compressed copy of docs/media/hero.
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Version 1.1.0](https://img.shields.io/badge/version-1.1.0-informational)
 
-<img src="docs/media/hero.png" width="720" alt="preflight-review: a paper airplane on a runway of code lines beside a checklist">
+<img src="docs/media/hero-rounded.png" width="720" alt="preflight-review: a paper airplane on a runway of code lines beside a checklist">
 
 It takes CodeRabbit's thoroughness (linters, callers and callees, rules files, saved lessons) and Anthropic's review discipline (find, then verify in a fresh context, then report only what was confirmed). It never fixes code and never blocks a push: its only output is `<repo>-PR<##>-preflight-review-<##>.md`.
 
